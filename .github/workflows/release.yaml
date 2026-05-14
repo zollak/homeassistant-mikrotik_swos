@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    name: Build and upload release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        uses: home-assistant/actions/helpers/version@master
+
+      - name: Set version in manifest
+        run: |
+          sed -i 's/"version": ".*"/"version": "${{ steps.version.outputs.version }}"/' \
+            custom_components/mikrotik_swos/manifest.json
+
+      - name: Create zip
+        run: |
+          cd custom_components
+          zip -r ../mikrotik_swos.zip mikrotik_swos/
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mikrotik_swos.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}

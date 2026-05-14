@@ -1,0 +1,34 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "MikroTik SwOS Switch",
+                "description": "Connect to a MikroTik CSS/CRS switch running SwOS firmware.",
+                "data": {
+                    "host": "Host",
+                    "username": "Username",
+                    "password": "Password",
+                    "port": "Port",
+                    "verify_ssl": "Verify SSL certificate"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Cannot connect to the switch. Check the host and port.",
+            "invalid_auth": "Authentication failed. Check username and password.",
+            "unknown": "An unexpected error occurred."
+        },
+        "abort": {
+            "already_configured": "This switch is already configured."
+        }
+    },
+    "entity": {
+        "sensor": {
+            "sfp_temperature": {"name": "SFP Temperature"},
+            "sfp_voltage": {"name": "SFP Voltage"},
+            "sfp_tx_power": {"name": "SFP TX Power"},
+            "sfp_rx_power": {"name": "SFP RX Power"},
+            "sfp_bias_current": {"name": "SFP Bias Current"}
+        }
+    }
+}
