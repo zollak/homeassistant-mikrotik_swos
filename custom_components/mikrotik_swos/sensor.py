@@ -15,9 +15,10 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     EntityCategory,
-    UnitOfDataRate,
+    UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfInformation,
+    UnitOfPower,
     UnitOfTemperature,
     UnitOfTime,
 )
@@ -27,7 +28,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_ENABLE_ERRORS, CONF_ENABLE_STATS, DOMAIN, NUM_PORTS, NUM_SFP, SFP_PORT_OFFSET
 from .coordinator import SwosCoordinator
-from .swos_api import PortErrors, PortStats, SfpSlot, SwitchData
+from .swos_api import POE_STATE_OPTIONS, PoePort, PortErrors, PortStats, SfpSlot, SwitchData
 
 
 # ── System sensor descriptions ────────────────────────────────────────────────
@@ -55,6 +56,65 @@ SYSTEM_SENSORS: tuple[SwosSystemSensorDescription, ...] = (
         state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda d: d.system.uptime_seconds,
+    ),
+)
+
+PSU_SENSORS: tuple[SwosSystemSensorDescription, ...] = (
+    SwosSystemSensorDescription(
+        key="psu1_voltage",
+        translation_key="psu1_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: d.system.psu1_voltage_v or None,
+    ),
+    SwosSystemSensorDescription(
+        key="psu1_current",
+        translation_key="psu1_current",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=UnitOfElectricCurrent.MILLIAMPERE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: d.system.psu1_current_ma or None,
+    ),
+    SwosSystemSensorDescription(
+        key="psu1_power",
+        translation_key="psu1_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: d.system.psu1_power_w or None,
+    ),
+    SwosSystemSensorDescription(
+        key="psu2_voltage",
+        translation_key="psu2_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: d.system.psu2_voltage_v or None,
+    ),
+    SwosSystemSensorDescription(
+        key="psu2_current",
+        translation_key="psu2_current",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=UnitOfElectricCurrent.MILLIAMPERE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: d.system.psu2_current_ma or None,
+    ),
+    SwosSystemSensorDescription(
+        key="psu2_power",
+        translation_key="psu2_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: d.system.psu2_power_w or None,
+    ),
+    SwosSystemSensorDescription(
+        key="power_consumption",
+        translation_key="power_consumption",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: d.system.power_consumption_w or None,
     ),
 )
 
@@ -216,6 +276,51 @@ PORT_ERROR_SENSORS: tuple[SwosPortErrorSensorDescription, ...] = (
 )
 
 
+# ── PoE sensor descriptions ────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, kw_only=True)
+class SwosPoeSensorDescription(SensorEntityDescription):
+    value_fn: Callable[[PoePort], Any]
+
+
+POE_PORT_SENSORS: tuple[SwosPoeSensorDescription, ...] = (
+    SwosPoeSensorDescription(
+        key="poe_power",
+        translation_key="poe_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda p: p.power_w or None,
+    ),
+    SwosPoeSensorDescription(
+        key="poe_current",
+        translation_key="poe_current",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=UnitOfElectricCurrent.MILLIAMPERE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda p: p.current_ma or None,
+    ),
+    SwosPoeSensorDescription(
+        key="poe_voltage",
+        translation_key="poe_voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda p: p.voltage_v or None,
+    ),
+    SwosPoeSensorDescription(
+        key="poe_state",
+        translation_key="poe_state",
+        device_class=SensorDeviceClass.ENUM,
+        options=POE_STATE_OPTIONS,
+        icon="mdi:lightning-bolt",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda p: p.state,
+    ),
+)
+
+
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 
@@ -229,27 +334,31 @@ async def async_setup_entry(
 
     entities: list[SensorEntity] = []
 
-    # System sensors (always enabled)
     for desc in SYSTEM_SENSORS:
         entities.append(SwosSystemSensor(coordinator, entry, desc, device_info))
 
-    # SFP sensors (always enabled)
     for slot_idx in range(NUM_SFP):
         port_num = SFP_PORT_OFFSET + slot_idx + 1
         for desc in SFP_SENSORS:
             entities.append(SwosSfpSensor(coordinator, entry, desc, slot_idx, port_num, device_info))
 
-    # Port stats (optional)
     if entry.data.get(CONF_ENABLE_STATS, False):
         for port_idx in range(NUM_PORTS):
             for desc in PORT_STATS_SENSORS:
                 entities.append(SwosPortStatsSensor(coordinator, entry, desc, port_idx, device_info))
 
-    # Port errors (optional)
     if entry.data.get(CONF_ENABLE_ERRORS, False):
         for port_idx in range(NUM_PORTS):
             for desc in PORT_ERROR_SENSORS:
                 entities.append(SwosPortErrorSensor(coordinator, entry, desc, port_idx, device_info))
+
+    # PoE sensors (auto-detected, only created if switch has PoE)
+    if coordinator.data and coordinator.data.poe_available:
+        for desc in PSU_SENSORS:
+            entities.append(SwosSystemSensor(coordinator, entry, desc, device_info))
+        for poe_port in coordinator.data.poe_ports:
+            for desc in POE_PORT_SENSORS:
+                entities.append(SwosPoeSensor(coordinator, entry, desc, poe_port.port - 1, device_info))
 
     async_add_entities(entities)
 
@@ -416,3 +525,36 @@ class SwosPortErrorSensor(CoordinatorEntity[SwosCoordinator], SensorEntity):
         if data is None or self._port_idx >= len(data.port_errors):
             return None
         return data.port_errors[self._port_idx]
+
+
+# ── PoE sensor entity ────────────────────────────────────────────────────────
+
+
+class SwosPoeSensor(CoordinatorEntity[SwosCoordinator], SensorEntity):
+    entity_description: SwosPoeSensorDescription
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, entry, description, port_idx, device_info):
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._port_idx = port_idx
+        self._port_num = port_idx + 1
+        self._attr_unique_id = f"{entry.entry_id}_port{self._port_num}_{description.key}"
+        self._attr_device_info = device_info
+
+    @property
+    def name(self) -> str:
+        return f"Port {self._port_num} {self.entity_description.key.replace('_', ' ').replace('poe ', 'PoE ').title()}"
+
+    @property
+    def native_value(self) -> Any:
+        poe = self._get_poe()
+        if poe is None:
+            return None
+        return self.entity_description.value_fn(poe)
+
+    def _get_poe(self) -> PoePort | None:
+        data: SwitchData | None = self.coordinator.data
+        if data is None or self._port_idx >= len(data.poe_ports):
+            return None
+        return data.poe_ports[self._port_idx]

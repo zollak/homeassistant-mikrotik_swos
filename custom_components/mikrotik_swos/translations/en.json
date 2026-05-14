@@ -13,6 +13,14 @@
                     "enable_stats": "Enable per-port traffic statistics",
                     "enable_errors": "Enable per-port error counters"
                 }
+            },
+            "reauth_confirm": {
+                "title": "Re-authenticate",
+                "description": "The switch rejected the stored credentials. Please enter the updated username and password.",
+                "data": {
+                    "username": "Username",
+                    "password": "Password"
+                }
             }
         },
         "error": {
@@ -21,13 +29,21 @@
             "unknown": "An unexpected error occurred."
         },
         "abort": {
-            "already_configured": "This switch is already configured."
+            "already_configured": "This switch is already configured.",
+            "reauth_successful": "Re-authentication successful."
         }
     },
     "entity": {
         "sensor": {
             "board_temperature": {"name": "Board Temperature"},
             "uptime": {"name": "Uptime"},
+            "psu1_voltage": {"name": "PSU1 Voltage"},
+            "psu1_current": {"name": "PSU1 Current"},
+            "psu1_power": {"name": "PSU1 Power"},
+            "psu2_voltage": {"name": "PSU2 Voltage"},
+            "psu2_current": {"name": "PSU2 Current"},
+            "psu2_power": {"name": "PSU2 Power"},
+            "power_consumption": {"name": "Power Consumption"},
             "sfp_temperature": {"name": "SFP Temperature"},
             "sfp_voltage": {"name": "SFP Voltage"},
             "sfp_tx_power": {"name": "SFP TX Power"},
@@ -41,7 +57,11 @@
             "port_rx_align_errors": {"name": "RX Alignment Errors"},
             "port_rx_runts": {"name": "RX Runts"},
             "port_rx_oversized": {"name": "RX Oversized"},
-            "port_tx_collisions": {"name": "TX Collisions"}
+            "port_tx_collisions": {"name": "TX Collisions"},
+            "poe_power": {"name": "PoE Power"},
+            "poe_current": {"name": "PoE Current"},
+            "poe_voltage": {"name": "PoE Voltage"},
+            "poe_state": {"name": "PoE State"}
         }
     }
 }

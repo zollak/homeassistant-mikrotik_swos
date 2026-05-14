@@ -1,7 +1,7 @@
 """SwOS API client for MikroTik CSS/CRS switches.
 
 Handles HTTP Digest authentication, .swb format parsing, and
-live data endpoint fetching (system info, SFP diagnostics, port stats).
+live data endpoint fetching (system info, SFP diagnostics, port stats, PoE).
 """
 
 from __future__ import annotations
@@ -141,6 +141,25 @@ def _parse_swb(text: str) -> dict:
     return result
 
 
+# ── PoE state mapping ────────────────────────────────────────────────────────
+
+POE_STATES = {
+    0: None,
+    1: "disabled",
+    2: "waiting_for_load",
+    3: "powered_on",
+    4: "overload",
+    5: "short_circuit",
+    6: "voltage_too_low",
+    7: "current_too_low",
+    8: "power_cycle",
+    9: "voltage_too_high",
+    10: "controller_error",
+}
+
+POE_STATE_OPTIONS = [v for v in POE_STATES.values() if v is not None]
+
+
 # ── Data models ───────────────────────────────────────────────────────────────
 
 
@@ -174,6 +193,13 @@ class SystemInfo:
     ip: str = ""
     uptime_seconds: int = 0
     board_temp_c: int | None = None
+    psu1_voltage_v: float = 0.0
+    psu1_current_ma: int = 0
+    psu1_power_w: float = 0.0
+    psu2_voltage_v: float = 0.0
+    psu2_current_ma: int = 0
+    psu2_power_w: float = 0.0
+    power_consumption_w: float = 0.0
 
 
 @dataclass
@@ -207,11 +233,22 @@ class PortErrors:
 
 
 @dataclass
+class PoePort:
+    port: int
+    state: str | None = None
+    current_ma: int = 0
+    voltage_v: float = 0.0
+    power_w: float = 0.0
+
+
+@dataclass
 class SwitchData:
     system: SystemInfo = field(default_factory=SystemInfo)
     sfp_slots: list[SfpSlot] = field(default_factory=list)
     port_stats: list[PortStats] = field(default_factory=list)
     port_errors: list[PortErrors] = field(default_factory=list)
+    poe_available: bool = False
+    poe_ports: list[PoePort] = field(default_factory=list)
 
 
 # ── Conversion helpers ────────────────────────────────────────────────────────
@@ -257,6 +294,12 @@ def _combine_u64(low: int, high: int) -> int:
 
 def _safe_get(arr: list, idx: int, default: int = 0) -> int:
     return arr[idx] if idx < len(arr) else default
+
+
+def _signed16(val: int) -> int:
+    if val >= 0x8000:
+        val -= 0x10000
+    return val
 
 
 # ── API client ────────────────────────────────────────────────────────────────
@@ -311,6 +354,14 @@ class SwosApi:
             raise SwosConnectionError(f"Cannot connect to {self._base_url}") from exc
 
     async def fetch_data(self) -> SwitchData:
+        try:
+            return await self._fetch_data_inner()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 401:
+                raise SwosAuthError("Authentication failed") from exc
+            raise SwosApiError(f"HTTP {exc.response.status_code}") from exc
+
+    async def _fetch_data_inner(self) -> SwitchData:
         data = SwitchData()
 
         sys_data = await self._fetch_endpoint("/sys.b")
@@ -329,6 +380,11 @@ class SwosApi:
                 data.port_stats = self._parse_port_stats(stats_data, port_names, link_mask)
             if self.enable_errors:
                 data.port_errors = self._parse_port_errors(stats_data)
+
+        poe_raw = await self._fetch_poe()
+        if poe_raw:
+            data.poe_available = True
+            data.poe_ports = self._parse_poe(poe_raw, port_names)
 
         return data
 
@@ -349,6 +405,18 @@ class SwosApi:
                 return {}
             raise
 
+    async def _fetch_poe(self) -> dict:
+        try:
+            return await self._fetch_endpoint("/poe.b")
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (303, 404):
+                _LOGGER.debug("PoE endpoint not available (non-PoE switch)")
+                return {}
+            raise
+        except Exception:
+            _LOGGER.debug("PoE endpoint fetch failed", exc_info=True)
+            return {}
+
     def _parse_system_info(self, sys_data: dict) -> SystemInfo:
         hostname = str(sys_data.get("id", "SwOS")).strip()
         model = str(sys_data.get("brd", "")).strip()
@@ -360,7 +428,15 @@ class SwosApi:
         upt = sys_data.get("upt", 0)
         uptime_sec = upt // 100 if isinstance(upt, int) else 0
         temp = sys_data.get("temp", None)
-        board_temp = temp if isinstance(temp, int) and temp > 0 else None
+        board_temp = _signed16(temp) if isinstance(temp, int) and temp > 0 else None
+
+        p1v = sys_data.get("p1v", 0)
+        p1c = sys_data.get("p1c", 0)
+        p1p = sys_data.get("p1p", 0)
+        p2v = sys_data.get("p2v", 0)
+        p2c = sys_data.get("p2c", 0)
+        p2p = sys_data.get("p2p", 0)
+        pcon = sys_data.get("i26", 0)
 
         return SystemInfo(
             hostname=hostname,
@@ -371,6 +447,13 @@ class SwosApi:
             ip=ip,
             uptime_seconds=uptime_sec,
             board_temp_c=board_temp,
+            psu1_voltage_v=round(p1v / 100, 2) if isinstance(p1v, int) and p1v else 0.0,
+            psu1_current_ma=p1c if isinstance(p1c, int) else 0,
+            psu1_power_w=round(p1p / 10, 1) if isinstance(p1p, int) and p1p else 0.0,
+            psu2_voltage_v=round(p2v / 100, 2) if isinstance(p2v, int) and p2v else 0.0,
+            psu2_current_ma=p2c if isinstance(p2c, int) else 0,
+            psu2_power_w=round(p2p / 10, 1) if isinstance(p2p, int) and p2p else 0.0,
+            power_consumption_w=round(pcon / 10, 1) if isinstance(pcon, int) and pcon else 0.0,
         )
 
     def _parse_sfp(self, sfp: dict) -> list[SfpSlot]:
@@ -479,5 +562,24 @@ class SwosApi:
                 tx_total_errors=_safe_get(tec, i),
                 tx_collisions=_safe_get(tcl, i),
                 tx_late_collisions=_safe_get(tlc, i),
+            ))
+        return result
+
+    def _parse_poe(self, poe: dict, port_names: list) -> list[PoePort]:
+        pwr = poe.get("pwr", [])
+        curr = poe.get("curr", [])
+        volt = poe.get("volt", [])
+        poes = poe.get("poes", [])
+
+        num_ports = len(pwr)
+        result = []
+        for i in range(num_ports):
+            state_idx = _safe_get(poes, i) if isinstance(poes, list) else 0
+            result.append(PoePort(
+                port=i + 1,
+                state=POE_STATES.get(state_idx),
+                current_ma=_safe_get(curr, i),
+                voltage_v=round(_safe_get(volt, i) / 10, 1) if _safe_get(volt, i) else 0.0,
+                power_w=round(_safe_get(pwr, i) / 10, 1) if _safe_get(pwr, i) else 0.0,
             ))
         return result

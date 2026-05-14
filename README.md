@@ -1,15 +1,23 @@
 # MikroTik SwOS integration for Home Assistant
 
-[![HACS Validation](https://github.com/zollak/homeassistant-mikrotik-swos/actions/workflows/validate.yaml/badge.svg)](https://github.com/zollak/homeassistant-mikrotik-swos/actions/workflows/validate.yaml)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
+[![GitHub Release](https://img.shields.io/github/v/release/zollak/homeassistant-mikrotik-swos?style=for-the-badge)](https://github.com/zollak/homeassistant-mikrotik-swos/releases)
+[![GitHub Downloads](https://img.shields.io/github/downloads/zollak/homeassistant-mikrotik-swos/total?style=for-the-badge)](https://github.com/zollak/homeassistant-mikrotik-swos/releases)
+[![GitHub Issues](https://img.shields.io/github/issues/zollak/homeassistant-mikrotik-swos?style=for-the-badge)](https://github.com/zollak/homeassistant-mikrotik-swos/issues)
+[![HACS Validation](https://img.shields.io/github/actions/workflow/status/zollak/homeassistant-mikrotik-swos/validate.yaml?style=for-the-badge&label=HACS)](https://github.com/zollak/homeassistant-mikrotik-swos/actions/workflows/validate.yaml)
 
 Home Assistant custom integration for **MikroTik CSS/CRS switches** running **SwOS** firmware.
 
-Provides system monitoring, SFP+ diagnostics, per-port traffic statistics, and per-port error counters.
+Provides system monitoring, SFP+ diagnostics, per-port traffic statistics, per-port error counters, and PoE monitoring.
 
 ## Supported hardware
 
-- MikroTik CSS326-24G-2S+ (tested)
-- Other CSS/CRS series running SwOS 2.x (should work, untested)
+| Model | Tested | PoE |
+|---|---|---|
+| CSS326-24G-2S+ | Yes | No |
+| CRS328-24P-4S+RM | No | Yes |
+| CRS112-8P-4S-IN | No | Yes |
+| Other CSS/CRS with SwOS 2.x | No | Varies |
 
 ## Features
 
@@ -32,20 +40,33 @@ Provides system monitoring, SFP+ diagnostics, per-port traffic statistics, and p
   - RX runts (undersized frames)
   - RX oversized frames
   - TX collisions
-- Config flow UI setup with connection validation
+- **PoE monitoring** (auto-detected on PoE-capable switches):
+  - PSU1/PSU2: voltage (V), current (mA), power (W)
+  - Total power consumption (W)
+  - Per-port: power (W), current (mA), voltage (V), state
+  - PoE states: powered_on, disabled, waiting_for_load, overload, short_circuit, etc.
+- Config flow UI with connection validation
+- Re-authentication flow (password change without removing the integration)
 - HTTP Digest authentication (SwOS native)
 - Automatic polling (default: 30 seconds)
 
 ## Installation via HACS
+
+[![Open HACS repository in Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=zollak&repository=homeassistant-mikrotik-swos&category=integration)
+
+Or manually:
 
 1. Open HACS in Home Assistant
 2. Click the three dots menu (top right) and select **Custom repositories**
 3. Add `https://github.com/zollak/homeassistant-mikrotik-swos` with category **Integration**
 4. Search for "MikroTik SwOS" and install
 5. Restart Home Assistant
-6. Go to **Settings > Devices & Services > Add Integration** and search for "MikroTik SwOS"
 
 ## Configuration
+
+[![Add integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=mikrotik_swos)
+
+Or manually: **Settings > Devices & Services > Add Integration** and search for "MikroTik SwOS".
 
 | Field | Default | Description |
 |---|---|---|
@@ -57,7 +78,7 @@ Provides system monitoring, SFP+ diagnostics, per-port traffic statistics, and p
 | Enable per-port traffic statistics | `false` | Creates RX/TX bytes and packet sensors for all 26 ports |
 | Enable per-port error counters | `false` | Creates error counter sensors for all 26 ports |
 
-> **Note:** Enabling stats creates 4 sensors per port (104 total), errors creates 5 sensors per port (130 total). Only enable what you need.
+> **Note:** Enabling stats creates 4 sensors per port (104 total), errors creates 5 sensors per port (130 total). PoE sensors are auto-detected and always created on PoE-capable switches. Only enable stats/errors if you need them.
 
 ## Sensors
 
@@ -103,13 +124,39 @@ The temperature sensor includes extra attributes: vendor, part number, serial, r
 | RX Oversized | — | `total_increasing` |
 | TX Collisions | — | `total_increasing` |
 
+### PoE (auto-detected, PoE switches only)
+
+**System-level:**
+
+| Sensor | Unit | Device class |
+|---|---|---|
+| PSU1 Voltage | V | `voltage` |
+| PSU1 Current | mA | `current` |
+| PSU1 Power | W | `power` |
+| PSU2 Voltage | V | `voltage` |
+| PSU2 Current | mA | `current` |
+| PSU2 Power | W | `power` |
+| Power Consumption | W | `power` |
+
+**Per-port:**
+
+| Sensor | Unit | Device class |
+|---|---|---|
+| PoE Power | W | `power` |
+| PoE Current | mA | `current` |
+| PoE Voltage | V | `voltage` |
+| PoE State | — | `enum` |
+
+PoE state values: `disabled`, `waiting_for_load`, `powered_on`, `overload`, `short_circuit`, `voltage_too_low`, `current_too_low`, `power_cycle`, `voltage_too_high`, `controller_error`.
+
 ## How it works
 
 The integration communicates with the SwOS web interface using HTTP Digest authentication. It fetches live data from:
-- `/sys.b` — system info (hostname, model, serial, firmware, uptime, board temperature)
+- `/sys.b` — system info (hostname, model, serial, firmware, uptime, board temperature, PSU metrics)
 - `/sfp.b` — SFP+ diagnostics (DDM values, module identification)
 - `/link.b` — port names and link status
 - `/stats.b` — per-port traffic statistics and error counters
+- `/poe.b` — per-port PoE status and power metrics (PoE switches only)
 
 No SSH, SNMP, or RouterOS API is used — SwOS does not support them.
 
@@ -147,6 +194,22 @@ automation:
         data:
           title: "FCS Errors Detected"
           message: "Port 18 FCS error count: {{ states('sensor.sw1_port18_rx_fcs_errors') }}"
+```
+
+### PoE power budget alert
+
+```yaml
+automation:
+  - alias: "PoE power budget warning"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.sw1_power_consumption
+        above: 200
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "PoE Power Warning"
+          message: "Total PoE power consumption: {{ states('sensor.sw1_power_consumption') }}W"
 ```
 
 ### Dashboard card

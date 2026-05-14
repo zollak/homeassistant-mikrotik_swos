@@ -7,10 +7,11 @@ from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
-from .swos_api import SwosApi, SwosApiError, SwitchData
+from .swos_api import SwosApi, SwosApiError, SwosAuthError, SwitchData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +33,8 @@ class SwosCoordinator(DataUpdateCoordinator[SwitchData]):
     async def _async_update_data(self) -> SwitchData:
         try:
             return await self.api.fetch_data()
+        except SwosAuthError as err:
+            raise ConfigEntryAuthFailed("Authentication failed") from err
         except SwosApiError as err:
             raise UpdateFailed(f"Error communicating with switch: {err}") from err
         except Exception as err:
