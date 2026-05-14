@@ -4,7 +4,7 @@
 
 Home Assistant custom integration for **MikroTik CSS/CRS switches** running **SwOS** firmware.
 
-Provides real-time SFP+ diagnostics sensors: temperature, voltage, TX/RX optical power, and module information.
+Provides system monitoring, SFP+ diagnostics, per-port traffic statistics, and per-port error counters.
 
 ## Supported hardware
 
@@ -13,12 +13,25 @@ Provides real-time SFP+ diagnostics sensors: temperature, voltage, TX/RX optical
 
 ## Features
 
+- **System monitoring**:
+  - Board temperature (°C)
+  - Uptime (seconds)
+  - Device info: model, serial number, firmware version, MAC, IP
 - **SFP+ diagnostics** (per slot):
   - Temperature (°C)
   - Supply voltage (V)
   - TX/RX optical power (dBm)
   - Bias current (mA)
   - Module info as attributes (vendor, part number, serial, type)
+- **Per-port traffic statistics** (optional, 26 ports):
+  - RX/TX bytes (64-bit counters)
+  - RX/TX packets
+- **Per-port error counters** (optional, 26 ports):
+  - RX FCS errors
+  - RX alignment errors
+  - RX runts (undersized frames)
+  - RX oversized frames
+  - TX collisions
 - Config flow UI setup with connection validation
 - HTTP Digest authentication (SwOS native)
 - Automatic polling (default: 30 seconds)
@@ -41,10 +54,23 @@ Provides real-time SFP+ diagnostics sensors: temperature, voltage, TX/RX optical
 | Password | — | Admin password |
 | Port | `80` | HTTP port |
 | Verify SSL | `false` | SSL certificate verification (only for HTTPS) |
+| Enable per-port traffic statistics | `false` | Creates RX/TX bytes and packet sensors for all 26 ports |
+| Enable per-port error counters | `false` | Creates error counter sensors for all 26 ports |
+
+> **Note:** Enabling stats creates 4 sensors per port (104 total), errors creates 5 sensors per port (130 total). Only enable what you need.
 
 ## Sensors
 
-For each SFP+ slot (ports 25-26 on CSS326):
+### System
+
+| Sensor | Unit | Device class |
+|---|---|---|
+| Board Temperature | °C | `temperature` |
+| Uptime | s | `duration` |
+
+The device info panel shows model, serial number, and firmware version.
+
+### SFP+ (per slot, ports 25-26 on CSS326)
 
 | Sensor | Unit | Device class |
 |---|---|---|
@@ -58,11 +84,32 @@ Sensors are only available when an SFP module is physically inserted in the slot
 
 The temperature sensor includes extra attributes: vendor, part number, serial, revision, and module type.
 
+### Per-port traffic statistics (optional)
+
+| Sensor | Unit | State class |
+|---|---|---|
+| RX Bytes | B | `total_increasing` |
+| TX Bytes | B | `total_increasing` |
+| RX Packets | — | `total_increasing` |
+| TX Packets | — | `total_increasing` |
+
+### Per-port error counters (optional)
+
+| Sensor | Unit | State class |
+|---|---|---|
+| RX FCS Errors | — | `total_increasing` |
+| RX Alignment Errors | — | `total_increasing` |
+| RX Runts | — | `total_increasing` |
+| RX Oversized | — | `total_increasing` |
+| TX Collisions | — | `total_increasing` |
+
 ## How it works
 
-The integration communicates with the SwOS web interface using HTTP Digest authentication. It fetches:
-- System info from the `.swb` backup endpoint (hostname, IP)
-- Live SFP diagnostics from the `/sfp.b` data endpoint
+The integration communicates with the SwOS web interface using HTTP Digest authentication. It fetches live data from:
+- `/sys.b` — system info (hostname, model, serial, firmware, uptime, board temperature)
+- `/sfp.b` — SFP+ diagnostics (DDM values, module identification)
+- `/link.b` — port names and link status
+- `/stats.b` — per-port traffic statistics and error counters
 
 No SSH, SNMP, or RouterOS API is used — SwOS does not support them.
 
@@ -84,12 +131,32 @@ automation:
           message: "SFP port 26 temperature is {{ states('sensor.sw1_sfp26_temperature') }}°C"
 ```
 
+### Alert on FCS errors
+
+```yaml
+automation:
+  - alias: "Port FCS error spike"
+    trigger:
+      - platform: state
+        entity_id: sensor.sw1_port18_rx_fcs_errors
+    condition:
+      - condition: template
+        value_template: "{{ trigger.to_state.state | int > trigger.from_state.state | int }}"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "FCS Errors Detected"
+          message: "Port 18 FCS error count: {{ states('sensor.sw1_port18_rx_fcs_errors') }}"
+```
+
 ### Dashboard card
 
 ```yaml
 type: entities
-title: SW1 SFP+ Status
+title: SW1 Overview
 entities:
+  - entity: sensor.sw1_board_temperature
+  - entity: sensor.sw1_uptime
   - entity: sensor.sw1_sfp26_temperature
   - entity: sensor.sw1_sfp26_voltage
   - entity: sensor.sw1_sfp26_tx_power
