@@ -6,7 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_VERIFY_SSL, DEFAULT_PORT, DOMAIN
+from .const import CONF_ENABLE_ERRORS, CONF_ENABLE_STATS, CONF_VERIFY_SSL, DEFAULT_PORT, DOMAIN
 from .coordinator import SwosCoordinator
 from .swos_api import SwosApi
 
@@ -20,6 +20,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         password=entry.data[CONF_PASSWORD],
         port=entry.data.get(CONF_PORT, DEFAULT_PORT),
         verify_ssl=entry.data.get(CONF_VERIFY_SSL, False),
+        enable_stats=entry.data.get(CONF_ENABLE_STATS, False),
+        enable_errors=entry.data.get(CONF_ENABLE_ERRORS, False),
     )
 
     coordinator = SwosCoordinator(hass, api)

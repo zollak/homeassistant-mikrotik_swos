@@ -10,7 +10,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 
-from .const import CONF_VERIFY_SSL, DEFAULT_PORT, DOMAIN
+from .const import CONF_ENABLE_ERRORS, CONF_ENABLE_STATS, CONF_VERIFY_SSL, DEFAULT_PORT, DOMAIN
 from .swos_api import SwosApi, SwosAuthError, SwosConnectionError
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,6 +22,8 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_PASSWORD): str,
         vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
         vol.Optional(CONF_VERIFY_SSL, default=False): bool,
+        vol.Optional(CONF_ENABLE_STATS, default=False): bool,
+        vol.Optional(CONF_ENABLE_ERRORS, default=False): bool,
     }
 )
 

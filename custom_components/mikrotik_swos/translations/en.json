@@ -9,7 +9,9 @@
                     "username": "Username",
                     "password": "Password",
                     "port": "Port",
-                    "verify_ssl": "Verify SSL certificate"
+                    "verify_ssl": "Verify SSL certificate",
+                    "enable_stats": "Enable per-port traffic statistics",
+                    "enable_errors": "Enable per-port error counters"
                 }
             }
         },
@@ -24,11 +26,22 @@
     },
     "entity": {
         "sensor": {
+            "board_temperature": {"name": "Board Temperature"},
+            "uptime": {"name": "Uptime"},
             "sfp_temperature": {"name": "SFP Temperature"},
             "sfp_voltage": {"name": "SFP Voltage"},
             "sfp_tx_power": {"name": "SFP TX Power"},
             "sfp_rx_power": {"name": "SFP RX Power"},
-            "sfp_bias_current": {"name": "SFP Bias Current"}
+            "sfp_bias_current": {"name": "SFP Bias Current"},
+            "port_rx_bytes": {"name": "RX Bytes"},
+            "port_tx_bytes": {"name": "TX Bytes"},
+            "port_rx_packets": {"name": "RX Packets"},
+            "port_tx_packets": {"name": "TX Packets"},
+            "port_rx_fcs_errors": {"name": "RX FCS Errors"},
+            "port_rx_align_errors": {"name": "RX Alignment Errors"},
+            "port_rx_runts": {"name": "RX Runts"},
+            "port_rx_oversized": {"name": "RX Oversized"},
+            "port_tx_collisions": {"name": "TX Collisions"}
         }
     }
 }

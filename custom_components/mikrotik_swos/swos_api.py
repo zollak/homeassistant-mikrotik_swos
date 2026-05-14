@@ -1,7 +1,7 @@
 """SwOS API client for MikroTik CSS/CRS switches.
 
 Handles HTTP Digest authentication, .swb format parsing, and
-live data endpoint fetching (system info, SFP diagnostics).
+live data endpoint fetching (system info, SFP diagnostics, port stats).
 """
 
 from __future__ import annotations
@@ -78,7 +78,13 @@ class _Tok:
 
 
 def _hs_decode(h: str) -> str:
-    return bytes.fromhex(h).decode("ascii", errors="replace") if h else ""
+    if not h:
+        return ""
+    raw = bytes.fromhex(h)
+    decoded = raw.decode("ascii", errors="replace")
+    if "�" in decoded:
+        return h
+    return decoded
 
 
 def _parse_value(tok: _Tok) -> Any:
@@ -161,16 +167,51 @@ class SfpSlot:
 @dataclass
 class SystemInfo:
     hostname: str = ""
-    mac: str = ""
-    firmware: str = ""
     model: str = ""
+    serial_number: str = ""
+    firmware: str = ""
+    mac: str = ""
     ip: str = ""
+    uptime_seconds: int = 0
+    board_temp_c: int | None = None
+
+
+@dataclass
+class PortStats:
+    port: int
+    name: str = ""
+    link_up: bool = False
+    rx_bytes: int = 0
+    tx_bytes: int = 0
+    rx_packets: int = 0
+    tx_packets: int = 0
+    rx_broadcast: int = 0
+    tx_broadcast: int = 0
+    rx_multicast: int = 0
+    tx_multicast: int = 0
+    rx_pause: int = 0
+    tx_pause: int = 0
+
+
+@dataclass
+class PortErrors:
+    port: int
+    rx_fcs: int = 0
+    rx_align: int = 0
+    rx_runts: int = 0
+    rx_oversized: int = 0
+    rx_fragments: int = 0
+    tx_total_errors: int = 0
+    tx_collisions: int = 0
+    tx_late_collisions: int = 0
 
 
 @dataclass
 class SwitchData:
     system: SystemInfo = field(default_factory=SystemInfo)
     sfp_slots: list[SfpSlot] = field(default_factory=list)
+    port_stats: list[PortStats] = field(default_factory=list)
+    port_errors: list[PortErrors] = field(default_factory=list)
 
 
 # ── Conversion helpers ────────────────────────────────────────────────────────
@@ -192,12 +233,30 @@ def _power_dbm(mw: float) -> float | None:
     return round(10 * math.log10(mw), 1)
 
 
-# ── IP decode ─────────────────────────────────────────────────────────────────
-
-
 def _ip_from_le(val: int) -> str:
     b = val.to_bytes(4, "little")
     return f"{b[0]}.{b[1]}.{b[2]}.{b[3]}"
+
+
+def _mac_format(raw: str) -> str:
+    clean = "".join(c for c in raw if c in "0123456789abcdefABCDEF")
+    if len(clean) == 12:
+        return ":".join(clean[i : i + 2] for i in range(0, 12, 2))
+    try:
+        hexed = raw.encode("latin-1").hex()
+        if len(hexed) == 12:
+            return ":".join(hexed[i : i + 2] for i in range(0, 12, 2))
+    except (UnicodeEncodeError, ValueError):
+        pass
+    return raw
+
+
+def _combine_u64(low: int, high: int) -> int:
+    return (high << 32) | (low & 0xFFFFFFFF)
+
+
+def _safe_get(arr: list, idx: int, default: int = 0) -> int:
+    return arr[idx] if idx < len(arr) else default
 
 
 # ── API client ────────────────────────────────────────────────────────────────
@@ -220,19 +279,30 @@ class SwosConnectionError(SwosApiError):
 class SwosApi:
     """Client for a MikroTik SwOS switch."""
 
-    def __init__(self, host: str, username: str, password: str, port: int = 80, verify_ssl: bool = False) -> None:
+    def __init__(
+        self,
+        host: str,
+        username: str,
+        password: str,
+        port: int = 80,
+        verify_ssl: bool = False,
+        enable_stats: bool = False,
+        enable_errors: bool = False,
+    ) -> None:
         scheme = "https" if port == 443 else "http"
         self._base_url = f"{scheme}://{host}:{port}"
         self._auth = httpx.DigestAuth(username, password)
         self._verify_ssl = verify_ssl
+        self.enable_stats = enable_stats
+        self.enable_errors = enable_errors
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(auth=self._auth, verify=self._verify_ssl, timeout=15.0)
 
     async def test_connection(self) -> SystemInfo:
         try:
-            backup = await self._download_backup()
-            return self._parse_system_info(backup)
+            sys_data = await self._fetch_endpoint("/sys.b")
+            return self._parse_system_info(sys_data)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 401:
                 raise SwosAuthError("Authentication failed") from exc
@@ -242,51 +312,66 @@ class SwosApi:
 
     async def fetch_data(self) -> SwitchData:
         data = SwitchData()
-        backup = await self._download_backup()
-        data.system = self._parse_system_info(backup)
+
+        sys_data = await self._fetch_endpoint("/sys.b")
+        data.system = self._parse_system_info(sys_data)
+
+        link_data = await self._fetch_endpoint("/link.b")
+        port_names = link_data.get("nm", [""] * 26)
+        link_mask = link_data.get("lnk", 0)
+
         sfp_raw = await self._fetch_sfp()
         data.sfp_slots = self._parse_sfp(sfp_raw)
+
+        if self.enable_stats or self.enable_errors:
+            stats_data = await self._fetch_endpoint("/stats.b")
+            if self.enable_stats:
+                data.port_stats = self._parse_port_stats(stats_data, port_names, link_mask)
+            if self.enable_errors:
+                data.port_errors = self._parse_port_errors(stats_data)
+
         return data
 
-    async def _download_backup(self) -> dict:
+    async def _fetch_endpoint(self, path: str) -> dict:
         async with self._client() as client:
-            last_err: Exception = SwosApiError("No backup URL found")
-            for path in _BACKUP_PATHS:
-                try:
-                    resp = await client.get(f"{self._base_url}{path}")
-                    resp.raise_for_status()
-                    text = resp.text.strip()
-                    if "sys.b" in text and ("vlan.b" in text or "link.b" in text):
-                        return _parse_swb(text)
-                except httpx.HTTPStatusError as exc:
-                    if exc.response.status_code in (301, 302, 303, 307, 308, 404):
-                        last_err = exc
-                        continue
-                    raise
-            raise last_err
+            resp = await client.get(f"{self._base_url}{path}")
+            resp.raise_for_status()
+            raw = resp.text.strip()
+            section = path.lstrip("/!").rstrip("/")
+            return _parse_swb(f"{section}:{raw}").get(section, {})
 
     async def _fetch_sfp(self) -> dict:
-        async with self._client() as client:
-            try:
-                resp = await client.get(f"{self._base_url}/sfp.b")
-                resp.raise_for_status()
-                raw = resp.text.strip()
-                return _parse_swb(f"sfp.b:{raw}").get("sfp.b", {})
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 404:
-                    _LOGGER.debug("SFP endpoint not available on this firmware")
-                    return {}
-                raise
+        try:
+            return await self._fetch_endpoint("/sfp.b")
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (303, 404):
+                _LOGGER.debug("SFP endpoint not available")
+                return {}
+            raise
 
-    def _parse_system_info(self, backup: dict) -> SystemInfo:
-        sys_data = backup.get("sys.b", {})
-        link_data = backup.get("link.b", {})
-        hostname = sys_data.get("id", "SwOS")
-        if isinstance(hostname, str) and all(c in "0123456789abcdef" for c in hostname.lower()):
-            hostname = _hs_decode(hostname)
+    def _parse_system_info(self, sys_data: dict) -> SystemInfo:
+        hostname = str(sys_data.get("id", "SwOS")).strip()
+        model = str(sys_data.get("brd", "")).strip()
+        serial = str(sys_data.get("sid", "")).strip()
+        firmware = str(sys_data.get("ver", "")).strip()
+        mac_raw = str(sys_data.get("mac", "")).strip()
         ip_raw = sys_data.get("ip", 0)
-        ip = _ip_from_le(ip_raw) if ip_raw else ""
-        return SystemInfo(hostname=hostname.strip(), ip=ip)
+        ip = _ip_from_le(ip_raw) if isinstance(ip_raw, int) and ip_raw else ""
+        upt = sys_data.get("upt", 0)
+        uptime_sec = upt // 100 if isinstance(upt, int) else 0
+        temp = sys_data.get("temp", None)
+        board_temp = temp if isinstance(temp, int) and temp > 0 else None
+
+        return SystemInfo(
+            hostname=hostname,
+            model=model,
+            serial_number=serial,
+            firmware=firmware,
+            mac=_mac_format(mac_raw),
+            ip=ip,
+            uptime_seconds=uptime_sec,
+            board_temp_c=board_temp,
+        )
 
     def _parse_sfp(self, sfp: dict) -> list[SfpSlot]:
         if not sfp:
@@ -315,8 +400,8 @@ class SwosApi:
                 slots.append(SfpSlot(port=port_num, present=False))
                 continue
 
-            tx_mw = round((tpw[i] if i < len(tpw) else 0) / 10000.0, 3)
-            rx_mw = round((rpw[i] if i < len(rpw) else 0) / 10000.0, 3)
+            tx_mw = round(_safe_get(tpw, i) / 10000.0, 3)
+            rx_mw = round(_safe_get(rpw, i) / 10000.0, 3)
 
             slots.append(SfpSlot(
                 port=port_num,
@@ -327,13 +412,72 @@ class SwosApi:
                 revision=str(rev[i]).strip() if i < len(rev) else "",
                 date_code=str(dat[i]).strip() if i < len(dat) else "",
                 sfp_type=str(typ[i]).strip() if i < len(typ) else "",
-                wavelength_nm=wln[i] if i < len(wln) else 0,
-                temperature_c=_sfp_temp(tmp[i] if i < len(tmp) else 0),
-                voltage_v=_sfp_voltage_v(vcc[i] if i < len(vcc) else 0),
-                bias_current_ma=tbs[i] if i < len(tbs) else 0,
+                wavelength_nm=_safe_get(wln, i),
+                temperature_c=_sfp_temp(_safe_get(tmp, i)),
+                voltage_v=_sfp_voltage_v(_safe_get(vcc, i)),
+                bias_current_ma=_safe_get(tbs, i),
                 tx_power_mw=tx_mw,
                 tx_power_dbm=_power_dbm(tx_mw),
                 rx_power_mw=rx_mw,
                 rx_power_dbm=_power_dbm(rx_mw),
             ))
         return slots
+
+    def _parse_port_stats(self, stats: dict, port_names: list, link_mask: int) -> list[PortStats]:
+        rb = stats.get("rb", [])
+        rbh = stats.get("rbh", [])
+        tb = stats.get("tb", [])
+        tbh = stats.get("tbh", [])
+        rtp = stats.get("rtp", [])
+        ttp = stats.get("ttp", [])
+        rbp = stats.get("rbp", [])
+        tbp = stats.get("tbp", [])
+        rmp = stats.get("rmp", [])
+        tmp = stats.get("tmp", [])
+        rpp = stats.get("rpp", [])
+        tpp = stats.get("tpp", [])
+
+        result = []
+        for i in range(26):
+            name = str(port_names[i]).strip() if i < len(port_names) and port_names[i] else f"Port {i+1}"
+            result.append(PortStats(
+                port=i + 1,
+                name=name,
+                link_up=bool(link_mask & (1 << i)),
+                rx_bytes=_combine_u64(_safe_get(rb, i), _safe_get(rbh, i)),
+                tx_bytes=_combine_u64(_safe_get(tb, i), _safe_get(tbh, i)),
+                rx_packets=_safe_get(rtp, i),
+                tx_packets=_safe_get(ttp, i),
+                rx_broadcast=_safe_get(rbp, i),
+                tx_broadcast=_safe_get(tbp, i),
+                rx_multicast=_safe_get(rmp, i),
+                tx_multicast=_safe_get(tmp, i),
+                rx_pause=_safe_get(rpp, i),
+                tx_pause=_safe_get(tpp, i),
+            ))
+        return result
+
+    def _parse_port_errors(self, stats: dict) -> list[PortErrors]:
+        rfcs = stats.get("rfcs", [])
+        rae = stats.get("rae", [])
+        rr = stats.get("rr", [])
+        rov = stats.get("rov", [])
+        fr = stats.get("fr", [])
+        tec = stats.get("tec", [])
+        tcl = stats.get("tcl", [])
+        tlc = stats.get("tlc", [])
+
+        result = []
+        for i in range(26):
+            result.append(PortErrors(
+                port=i + 1,
+                rx_fcs=_safe_get(rfcs, i),
+                rx_align=_safe_get(rae, i),
+                rx_runts=_safe_get(rr, i),
+                rx_oversized=_safe_get(rov, i),
+                rx_fragments=_safe_get(fr, i),
+                tx_total_errors=_safe_get(tec, i),
+                tx_collisions=_safe_get(tcl, i),
+                tx_late_collisions=_safe_get(tlc, i),
+            ))
+        return result
