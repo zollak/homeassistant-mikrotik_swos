@@ -4,9 +4,9 @@
     "codeowners": ["@zollak"],
     "config_flow": true,
     "dependencies": [],
-    "documentation": "https://github.com/zollak/homeassistant-mikrotik-swos",
+    "documentation": "https://github.com/zollak/homeassistant-mikrotik_swos",
     "iot_class": "local_polling",
-    "issue_tracker": "https://github.com/zollak/homeassistant-mikrotik-swos/issues",
+    "issue_tracker": "https://github.com/zollak/homeassistant-mikrotik_swos/issues",
     "requirements": ["httpx>=0.27.0"],
     "version": "0.1.0"
 }

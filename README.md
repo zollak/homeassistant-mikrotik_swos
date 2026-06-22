@@ -1,10 +1,10 @@
 # MikroTik SwOS integration for Home Assistant
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-[![GitHub Release](https://img.shields.io/github/v/release/zollak/homeassistant-mikrotik-swos?style=for-the-badge)](https://github.com/zollak/homeassistant-mikrotik-swos/releases)
-[![GitHub Downloads](https://img.shields.io/github/downloads/zollak/homeassistant-mikrotik-swos/total?style=for-the-badge)](https://github.com/zollak/homeassistant-mikrotik-swos/releases)
-[![GitHub Issues](https://img.shields.io/github/issues/zollak/homeassistant-mikrotik-swos?style=for-the-badge)](https://github.com/zollak/homeassistant-mikrotik-swos/issues)
-[![HACS Validation](https://img.shields.io/github/actions/workflow/status/zollak/homeassistant-mikrotik-swos/validate.yaml?style=for-the-badge&label=HACS)](https://github.com/zollak/homeassistant-mikrotik-swos/actions/workflows/validate.yaml)
+[![GitHub Release](https://img.shields.io/github/v/release/zollak/homeassistant-mikrotik_swos?style=for-the-badge)](https://github.com/zollak/homeassistant-mikrotik_swos/releases)
+[![GitHub Downloads](https://img.shields.io/github/downloads/zollak/homeassistant-mikrotik_swos/total?style=for-the-badge)](https://github.com/zollak/homeassistant-mikrotik_swos/releases)
+[![GitHub Issues](https://img.shields.io/github/issues/zollak/homeassistant-mikrotik_swos?style=for-the-badge)](https://github.com/zollak/homeassistant-mikrotik_swos/issues)
+[![HACS Validation](https://img.shields.io/github/actions/workflow/status/zollak/homeassistant-mikrotik_swos/validate.yaml?style=for-the-badge&label=HACS)](https://github.com/zollak/homeassistant-mikrotik_swos/actions/workflows/validate.yaml)
 
 Home Assistant custom integration for **MikroTik CSS/CRS switches** running **SwOS** firmware.
 
@@ -52,13 +52,13 @@ Provides system monitoring, SFP+ diagnostics, per-port traffic statistics, per-p
 
 ## Installation via HACS
 
-[![Open HACS repository in Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=zollak&repository=homeassistant-mikrotik-swos&category=integration)
+[![Open HACS repository in Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=zollak&repository=homeassistant-mikrotik_swos&category=integration)
 
 Or manually:
 
 1. Open HACS in Home Assistant
 2. Click the three dots menu (top right) and select **Custom repositories**
-3. Add `https://github.com/zollak/homeassistant-mikrotik-swos` with category **Integration**
+3. Add `https://github.com/zollak/homeassistant-mikrotik_swos` with category **Integration**
 4. Search for "MikroTik SwOS" and install
 5. Restart Home Assistant
 
