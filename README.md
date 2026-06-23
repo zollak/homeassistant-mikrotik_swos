@@ -68,6 +68,10 @@ Or manually:
 
 Or manually: **Settings > Devices & Services > Add Integration** and search for "MikroTik SwOS".
 
+The setup is a short multi-step flow:
+
+**Step 1 — Connection**
+
 | Field | Default | Description |
 |---|---|---|
 | Host | — | Switch hostname or IP address (e.g. `10.10.10.4` or `sw1`) |
@@ -75,10 +79,29 @@ Or manually: **Settings > Devices & Services > Add Integration** and search for 
 | Password | — | Admin password |
 | Port | `80` | HTTP port |
 | Verify SSL | `false` | SSL certificate verification (only for HTTPS) |
-| Enable per-port traffic statistics | `false` | Creates RX/TX bytes and packet sensors for all 26 ports |
-| Enable per-port error counters | `false` | Creates error counter sensors for all 26 ports |
 
-> **Note:** Enabling stats creates 4 sensors per port (104 total), errors creates 5 sensors per port (130 total). PoE sensors are auto-detected and always created on PoE-capable switches. Only enable stats/errors if you need them.
+**Step 2 — Sensor groups**
+
+Board temperature and uptime are always included. Toggle the optional groups:
+
+| Group | Default | Description |
+|---|---|---|
+| SFP+ diagnostics | on | Temperature, voltage, TX/RX power, TX bias per SFP+ slot (Diagnostic category) |
+| PoE monitoring | on | PSU + per-port PoE sensors (only created if the switch has PoE) |
+| Per-port traffic statistics | off | RX/TX bytes and packets per selected port |
+| Per-port error counters | off | FCS / alignment / runts / oversized / collision counters per selected port |
+
+**Step 3 — Ports** (shown only if traffic statistics or error counters are enabled)
+
+Multi-select of which ports get traffic/error sensors. **All ports are selected by
+default** — deselect the ones you do not need (no need to tick 26 boxes).
+
+**Changing it later:** open **Settings > Devices & Services > MikroTik SwOS > Configure**
+to re-run the groups and ports steps any time. Disabling a group or deselecting ports
+removes those entities on reload (they are not left behind as "unavailable").
+
+> **Note:** stats create 4 sensors per selected port, errors 5 per selected port. Enable
+> only what you need. PoE sensors are auto-detected and only created on PoE switches.
 
 ## Sensors
 
