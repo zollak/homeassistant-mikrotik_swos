@@ -83,6 +83,15 @@ class SwosPortSwitch(CoordinatorEntity[SwosCoordinator], SwitchEntity):
             return None
         return data.port_enabled[self._port_idx]
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose the port number and its SwOS name for at-a-glance mapping/automations."""
+        data: SwitchData | None = self.coordinator.data
+        swos_name = ""
+        if data and self._port_idx < len(data.port_names):
+            swos_name = data.port_names[self._port_idx]
+        return {"port": self._port_num, "port_name": swos_name or None}
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self.coordinator.api.async_set_port_enabled(self._port_num, True)
         await self.coordinator.async_request_refresh()
