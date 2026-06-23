@@ -176,7 +176,7 @@ class SfpSlot:
     wavelength_nm: int = 0
     temperature_c: int | None = None
     voltage_v: float | None = None
-    bias_current_ma: int = 0
+    bias_current_ma: int | None = None
     tx_power_mw: float = 0.0
     tx_power_dbm: float | None = None
     rx_power_mw: float = 0.0
@@ -483,8 +483,13 @@ class SwosApi:
                 slots.append(SfpSlot(port=port_num, present=False))
                 continue
 
-            tx_mw = round(_safe_get(tpw, i) / 10000.0, 3)
-            rx_mw = round(_safe_get(rpw, i) / 10000.0, 3)
+            # Modules without DDM (e.g. passive DAC cables) report 0xffffff80 (-128)
+            # for temperature. Treat that as "no diagnostics" and null all DDM fields
+            # rather than surfacing the -128 sentinel and bogus 0 readings.
+            temp_raw = _safe_get(tmp, i)
+            has_ddm = temp_raw != 0xFFFFFF80
+            tx_mw = round(_safe_get(tpw, i) / 10000.0, 3) if has_ddm else 0.0
+            rx_mw = round(_safe_get(rpw, i) / 10000.0, 3) if has_ddm else 0.0
 
             slots.append(SfpSlot(
                 port=port_num,
@@ -496,9 +501,9 @@ class SwosApi:
                 date_code=str(dat[i]).strip() if i < len(dat) else "",
                 sfp_type=str(typ[i]).strip() if i < len(typ) else "",
                 wavelength_nm=_safe_get(wln, i),
-                temperature_c=_sfp_temp(_safe_get(tmp, i)),
-                voltage_v=_sfp_voltage_v(_safe_get(vcc, i)),
-                bias_current_ma=_safe_get(tbs, i),
+                temperature_c=_sfp_temp(temp_raw) if has_ddm else None,
+                voltage_v=_sfp_voltage_v(_safe_get(vcc, i)) if has_ddm else None,
+                bias_current_ma=_safe_get(tbs, i) if has_ddm else None,
                 tx_power_mw=tx_mw,
                 tx_power_dbm=_power_dbm(tx_mw),
                 rx_power_mw=rx_mw,

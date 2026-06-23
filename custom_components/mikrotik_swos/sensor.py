@@ -342,12 +342,17 @@ async def async_setup_entry(
         for desc in SFP_SENSORS:
             entities.append(SwosSfpSensor(coordinator, entry, desc, slot_idx, port_num, device_info))
 
-    if entry.data.get(CONF_ENABLE_STATS, False):
+    # Options (toggled later via the options flow) take precedence over the
+    # values captured at initial setup.
+    enable_stats = entry.options.get(CONF_ENABLE_STATS, entry.data.get(CONF_ENABLE_STATS, False))
+    enable_errors = entry.options.get(CONF_ENABLE_ERRORS, entry.data.get(CONF_ENABLE_ERRORS, False))
+
+    if enable_stats:
         for port_idx in range(NUM_PORTS):
             for desc in PORT_STATS_SENSORS:
                 entities.append(SwosPortStatsSensor(coordinator, entry, desc, port_idx, device_info))
 
-    if entry.data.get(CONF_ENABLE_ERRORS, False):
+    if enable_errors:
         for port_idx in range(NUM_PORTS):
             for desc in PORT_ERROR_SENSORS:
                 entities.append(SwosPortErrorSensor(coordinator, entry, desc, port_idx, device_info))
@@ -401,6 +406,7 @@ class SwosSystemSensor(CoordinatorEntity[SwosCoordinator], SensorEntity):
 class SwosSfpSensor(CoordinatorEntity[SwosCoordinator], SensorEntity):
     entity_description: SwosSfpSensorDescription
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator, entry, description, slot_idx, port_num, device_info):
         super().__init__(coordinator)
@@ -412,7 +418,7 @@ class SwosSfpSensor(CoordinatorEntity[SwosCoordinator], SensorEntity):
 
     @property
     def name(self) -> str:
-        return f"SFP{self._port_num} {self.entity_description.key.replace('_', ' ').title()}"
+        return f"SFP+ {self._slot_idx + 1} {self.entity_description.key.replace('_', ' ').title()}"
 
     @property
     def available(self) -> bool:

@@ -20,8 +20,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         password=entry.data[CONF_PASSWORD],
         port=entry.data.get(CONF_PORT, DEFAULT_PORT),
         verify_ssl=entry.data.get(CONF_VERIFY_SSL, False),
-        enable_stats=entry.data.get(CONF_ENABLE_STATS, False),
-        enable_errors=entry.data.get(CONF_ENABLE_ERRORS, False),
+        enable_stats=entry.options.get(CONF_ENABLE_STATS, entry.data.get(CONF_ENABLE_STATS, False)),
+        enable_errors=entry.options.get(CONF_ENABLE_ERRORS, entry.data.get(CONF_ENABLE_ERRORS, False)),
     )
 
     coordinator = SwosCoordinator(hass, api)
@@ -29,7 +29,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload when options change so stats/error sensors are added/removed."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

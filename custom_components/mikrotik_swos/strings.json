@@ -33,6 +33,17 @@
             "reauth_successful": "Re-authentication successful."
         }
     },
+    "options": {
+        "step": {
+            "init": {
+                "title": "MikroTik SwOS options",
+                "data": {
+                    "enable_stats": "Enable per-port traffic statistics",
+                    "enable_errors": "Enable per-port error counters"
+                }
+            }
+        }
+    },
     "entity": {
         "sensor": {
             "board_temperature": {"name": "Board Temperature"},

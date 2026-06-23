@@ -8,8 +8,9 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
+from homeassistant.core import callback
 
 from .const import CONF_ENABLE_ERRORS, CONF_ENABLE_STATS, CONF_VERIFY_SSL, DEFAULT_PORT, DOMAIN
 from .swos_api import SwosApi, SwosAuthError, SwosConnectionError
@@ -33,6 +34,11 @@ class MikrotikSwosConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for MikroTik SwOS."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> "MikrotikSwosOptionsFlow":
+        return MikrotikSwosOptionsFlow()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -113,4 +119,33 @@ class MikrotikSwosConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
+        )
+
+
+class MikrotikSwosOptionsFlow(OptionsFlow):
+    """Options flow: toggle per-port traffic statistics and error counters."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        # HA provides self.config_entry (read-only) -- do NOT assign it.
+        opts = self.config_entry.options
+        data = self.config_entry.data
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_ENABLE_STATS,
+                        default=opts.get(CONF_ENABLE_STATS, data.get(CONF_ENABLE_STATS, False)),
+                    ): bool,
+                    vol.Optional(
+                        CONF_ENABLE_ERRORS,
+                        default=opts.get(CONF_ENABLE_ERRORS, data.get(CONF_ENABLE_ERRORS, False)),
+                    ): bool,
+                }
+            ),
         )
