@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -20,13 +21,32 @@ from homeassistant.const import (
     UnitOfInformation,
     UnitOfPower,
     UnitOfTemperature,
-    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
-from .const import CONF_ENABLE_ERRORS, CONF_ENABLE_STATS, DOMAIN, NUM_PORTS, NUM_SFP, SFP_PORT_OFFSET
+from .const import (
+    CONF_ENABLE_ERRORS,
+    CONF_ENABLE_POE,
+    CONF_ENABLE_SFP,
+    CONF_ENABLE_STATS,
+    CONF_PORTS,
+    DOMAIN,
+    NUM_PORTS,
+    NUM_SFP,
+    SFP_PORT_OFFSET,
+)
+
+
+def _boot_time(uptime_seconds: int | None) -> datetime | None:
+    """Convert uptime seconds to a stable boot timestamp (rounded to the minute)."""
+    if not uptime_seconds:
+        return None
+    boot = dt_util.utcnow() - timedelta(seconds=uptime_seconds)
+    return boot.replace(second=0, microsecond=0)
 from .coordinator import SwosCoordinator
 from .swos_api import POE_STATE_OPTIONS, PoePort, PortErrors, PortStats, SfpSlot, SwitchData
 
@@ -51,11 +71,8 @@ SYSTEM_SENSORS: tuple[SwosSystemSensorDescription, ...] = (
     SwosSystemSensorDescription(
         key="uptime",
         translation_key="uptime",
-        device_class=SensorDeviceClass.DURATION,
-        native_unit_of_measurement=UnitOfTime.SECONDS,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda d: d.system.uptime_seconds,
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda d: _boot_time(d.system.uptime_seconds),
     ),
 )
 
@@ -332,38 +349,59 @@ async def async_setup_entry(
     coordinator: SwosCoordinator = hass.data[DOMAIN][entry.entry_id]
     device_info = _build_device_info(coordinator, entry)
 
+    # Group toggles + port selection. Options (set later via the options flow)
+    # take precedence over the values captured at initial setup. board temperature
+    # and uptime are always present (the base group).
+    def _opt(key: str, default: Any) -> Any:
+        return entry.options.get(key, entry.data.get(key, default))
+
+    enable_sfp = _opt(CONF_ENABLE_SFP, True)
+    enable_stats = _opt(CONF_ENABLE_STATS, False)
+    enable_errors = _opt(CONF_ENABLE_ERRORS, False)
+    enable_poe = _opt(CONF_ENABLE_POE, True)
+    selected_ports = {int(p) for p in _opt(CONF_PORTS, list(range(1, NUM_PORTS + 1)))}
+
     entities: list[SensorEntity] = []
 
     for desc in SYSTEM_SENSORS:
         entities.append(SwosSystemSensor(coordinator, entry, desc, device_info))
 
-    for slot_idx in range(NUM_SFP):
-        port_num = SFP_PORT_OFFSET + slot_idx + 1
-        for desc in SFP_SENSORS:
-            entities.append(SwosSfpSensor(coordinator, entry, desc, slot_idx, port_num, device_info))
-
-    # Options (toggled later via the options flow) take precedence over the
-    # values captured at initial setup.
-    enable_stats = entry.options.get(CONF_ENABLE_STATS, entry.data.get(CONF_ENABLE_STATS, False))
-    enable_errors = entry.options.get(CONF_ENABLE_ERRORS, entry.data.get(CONF_ENABLE_ERRORS, False))
+    if enable_sfp:
+        for slot_idx in range(NUM_SFP):
+            port_num = SFP_PORT_OFFSET + slot_idx + 1
+            for desc in SFP_SENSORS:
+                entities.append(SwosSfpSensor(coordinator, entry, desc, slot_idx, port_num, device_info))
 
     if enable_stats:
         for port_idx in range(NUM_PORTS):
+            if port_idx + 1 not in selected_ports:
+                continue
             for desc in PORT_STATS_SENSORS:
                 entities.append(SwosPortStatsSensor(coordinator, entry, desc, port_idx, device_info))
 
     if enable_errors:
         for port_idx in range(NUM_PORTS):
+            if port_idx + 1 not in selected_ports:
+                continue
             for desc in PORT_ERROR_SENSORS:
                 entities.append(SwosPortErrorSensor(coordinator, entry, desc, port_idx, device_info))
 
-    # PoE sensors (auto-detected, only created if switch has PoE)
-    if coordinator.data and coordinator.data.poe_available:
+    # PoE sensors (auto-detected; only if the switch has PoE AND the group is enabled)
+    if enable_poe and coordinator.data and coordinator.data.poe_available:
         for desc in PSU_SENSORS:
             entities.append(SwosSystemSensor(coordinator, entry, desc, device_info))
         for poe_port in coordinator.data.poe_ports:
             for desc in POE_PORT_SENSORS:
                 entities.append(SwosPoeSensor(coordinator, entry, desc, poe_port.port - 1, device_info))
+
+    # Remove registry entries for entities we are no longer creating (e.g. a group
+    # was disabled or ports deselected via the options flow). HA does not purge these
+    # on its own -- without this they linger as "unavailable".
+    wanted_uids = {e.unique_id for e in entities}
+    registry = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if reg_entry.unique_id not in wanted_uids:
+            registry.async_remove(reg_entry.entity_id)
 
     async_add_entities(entities)
 

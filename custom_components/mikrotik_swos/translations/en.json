@@ -9,9 +9,24 @@
                     "username": "Username",
                     "password": "Password",
                     "port": "Port",
-                    "verify_ssl": "Verify SSL certificate",
-                    "enable_stats": "Enable per-port traffic statistics",
-                    "enable_errors": "Enable per-port error counters"
+                    "verify_ssl": "Verify SSL certificate"
+                }
+            },
+            "groups": {
+                "title": "Sensor groups",
+                "description": "Board temperature and uptime are always included. Choose which optional groups to add.",
+                "data": {
+                    "enable_sfp": "SFP+ diagnostics",
+                    "enable_poe": "PoE monitoring (if the switch supports it)",
+                    "enable_stats": "Per-port traffic statistics",
+                    "enable_errors": "Per-port error counters"
+                }
+            },
+            "ports": {
+                "title": "Ports",
+                "description": "Select which ports to create traffic/error sensors for. All ports are selected by default; deselect the ones you do not need.",
+                "data": {
+                    "ports": "Ports"
                 }
             },
             "reauth_confirm": {
@@ -36,10 +51,20 @@
     "options": {
         "step": {
             "init": {
-                "title": "MikroTik SwOS options",
+                "title": "Sensor groups",
+                "description": "Board temperature and uptime are always included.",
                 "data": {
-                    "enable_stats": "Enable per-port traffic statistics",
-                    "enable_errors": "Enable per-port error counters"
+                    "enable_sfp": "SFP+ diagnostics",
+                    "enable_poe": "PoE monitoring (if the switch supports it)",
+                    "enable_stats": "Per-port traffic statistics",
+                    "enable_errors": "Per-port error counters"
+                }
+            },
+            "ports": {
+                "title": "Ports",
+                "description": "Select which ports to create traffic/error sensors for.",
+                "data": {
+                    "ports": "Ports"
                 }
             }
         }
