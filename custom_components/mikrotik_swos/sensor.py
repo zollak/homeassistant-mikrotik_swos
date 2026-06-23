@@ -159,6 +159,7 @@ SFP_SENSORS: tuple[SwosSfpSensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         native_unit_of_measurement=UnitOfElectricPotential.VOLT,
         state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=3,
         value_fn=lambda s: s.voltage_v,
     ),
     SwosSfpSensorDescription(
@@ -183,7 +184,9 @@ SFP_SENSORS: tuple[SwosSfpSensorDescription, ...] = (
         native_unit_of_measurement="mA",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:current-dc",
-        value_fn=lambda s: s.bias_current_ma,
+        # TX laser bias current (SFF-8472 DDM). 0 = no laser (e.g. copper S+RJ10) ->
+        # show Unknown, consistent with the optical TX/RX power sensors.
+        value_fn=lambda s: s.bias_current_ma or None,
     ),
 )
 
@@ -456,7 +459,10 @@ class SwosSfpSensor(CoordinatorEntity[SwosCoordinator], SensorEntity):
 
     @property
     def name(self) -> str:
-        return f"SFP+ {self._slot_idx + 1} {self.entity_description.key.replace('_', ' ').title()}"
+        key = self.entity_description.key
+        labels = {"bias_current": "Tx Bias Current"}
+        label = labels.get(key, key.replace("_", " ").title())
+        return f"SFP+ {self._slot_idx + 1} {label}"
 
     @property
     def available(self) -> bool:
