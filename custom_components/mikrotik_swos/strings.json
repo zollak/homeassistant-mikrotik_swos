@@ -19,7 +19,8 @@
                     "enable_sfp": "SFP+ diagnostics",
                     "enable_poe": "PoE monitoring (if the switch supports it)",
                     "enable_stats": "Per-port traffic statistics",
-                    "enable_errors": "Per-port error counters"
+                    "enable_errors": "Per-port error counters",
+                    "enable_port_control": "Port control (enable/disable switches)"
                 }
             },
             "ports": {
@@ -57,7 +58,8 @@
                     "enable_sfp": "SFP+ diagnostics",
                     "enable_poe": "PoE monitoring (if the switch supports it)",
                     "enable_stats": "Per-port traffic statistics",
-                    "enable_errors": "Per-port error counters"
+                    "enable_errors": "Per-port error counters",
+                    "enable_port_control": "Port control (enable/disable switches)"
                 }
             },
             "ports": {

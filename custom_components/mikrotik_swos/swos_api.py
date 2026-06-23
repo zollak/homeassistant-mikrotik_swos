@@ -249,9 +249,46 @@ class SwitchData:
     port_errors: list[PortErrors] = field(default_factory=list)
     poe_available: bool = False
     poe_ports: list[PoePort] = field(default_factory=list)
+    port_names: list[str] = field(default_factory=list)
+    port_enabled: list[bool] = field(default_factory=list)
 
 
 # ── Conversion helpers ────────────────────────────────────────────────────────
+
+
+def _hs_encode(s: str) -> str:
+    """Encode a Python str to SwOS hex-encoded ASCII."""
+    return s.encode("ascii", errors="replace").hex()
+
+
+def _link_mask_hex(n: int) -> str:
+    """SwOS mask format: 0x + hex, zero-padded to an even number of digits."""
+    h = "%x" % n
+    return "0x" + ("0" + h if len(h) % 2 else h)
+
+
+def serialize_link(link: dict) -> str:
+    """Serialize the link object exactly as the SwOS web UI POSTs it to /link.b.
+
+    Only these 8 fields, in this order: en, nm, an, spdc, dpxc, fctc, fctr, sfpr.
+    Verified byte-for-byte against the live SwOS 2.18 UI payload.
+    """
+    nm = "[" + ",".join("'%s'" % _hs_encode(s) for s in link.get("nm", [])) + "]"
+    spdc = "[" + ",".join("0x%02x" % x for x in link.get("spdc", [])) + "]"
+    sfpr = "[" + ",".join("0x%02x" % x for x in link.get("sfpr", [])) + "]"
+    return (
+        "{en:%s,nm:%s,an:%s,spdc:%s,dpxc:%s,fctc:%s,fctr:%s,sfpr:%s}"
+        % (
+            _link_mask_hex(link["en"]),
+            nm,
+            _link_mask_hex(link["an"]),
+            spdc,
+            _link_mask_hex(link["dpxc"]),
+            _link_mask_hex(link["fctc"]),
+            _link_mask_hex(link["fctr"]),
+            sfpr,
+        )
+    )
 
 
 def _sfp_temp(raw: int) -> int:
@@ -370,6 +407,9 @@ class SwosApi:
         link_data = await self._fetch_endpoint("/link.b")
         port_names = link_data.get("nm", [""] * 26)
         link_mask = link_data.get("lnk", 0)
+        en_mask = link_data.get("en", 0)
+        data.port_names = [str(n) for n in port_names]
+        data.port_enabled = [bool(en_mask & (1 << i)) for i in range(26)]
 
         sfp_raw = await self._fetch_sfp()
         data.sfp_slots = self._parse_sfp(sfp_raw)
@@ -395,6 +435,27 @@ class SwosApi:
             raw = resp.text.strip()
             section = path.lstrip("/!").rstrip("/")
             return _parse_swb(f"{section}:{raw}").get(section, {})
+
+    async def async_set_port_enabled(self, port: int, enabled: bool) -> None:
+        """Enable or disable a port by POSTing the modified link object to /link.b.
+
+        Mirrors the SwOS web UI's "Apply All" on the Link tab (POST /link.b,
+        Content-Type text/plain). Reads the current link config, flips only the
+        port's bit in the `en` mask, and writes the full link object back so all
+        other link settings are preserved.
+        """
+        link = await self._fetch_endpoint("/link.b")
+        bit = 1 << (port - 1)
+        en = link.get("en", 0)
+        link["en"] = (en | bit) if enabled else (en & ~bit)
+        body = serialize_link(link).encode("ascii")
+        async with self._client() as client:
+            resp = await client.post(
+                f"{self._base_url}/link.b",
+                content=body,
+                headers={"Content-Type": "text/plain"},
+            )
+            resp.raise_for_status()
 
     async def _fetch_sfp(self) -> dict:
         try:

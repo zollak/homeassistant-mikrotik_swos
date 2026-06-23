@@ -21,6 +21,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_ENABLE_ERRORS,
     CONF_ENABLE_POE,
+    CONF_ENABLE_PORT_CONTROL,
     CONF_ENABLE_SFP,
     CONF_ENABLE_STATS,
     CONF_PORTS,
@@ -54,6 +55,7 @@ def _groups_schema(defaults: Mapping[str, Any]) -> vol.Schema:
             vol.Optional(CONF_ENABLE_POE, default=defaults.get(CONF_ENABLE_POE, True)): bool,
             vol.Optional(CONF_ENABLE_STATS, default=defaults.get(CONF_ENABLE_STATS, False)): bool,
             vol.Optional(CONF_ENABLE_ERRORS, default=defaults.get(CONF_ENABLE_ERRORS, False)): bool,
+            vol.Optional(CONF_ENABLE_PORT_CONTROL, default=defaults.get(CONF_ENABLE_PORT_CONTROL, False)): bool,
         }
     )
 
@@ -130,7 +132,7 @@ class MikrotikSwosConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         if user_input is not None:
             self._groups = user_input
-            if user_input.get(CONF_ENABLE_STATS) or user_input.get(CONF_ENABLE_ERRORS):
+            if user_input.get(CONF_ENABLE_STATS) or user_input.get(CONF_ENABLE_ERRORS) or user_input.get(CONF_ENABLE_PORT_CONTROL):
                 return await self.async_step_ports()
             return self._create_entry()
 
@@ -208,7 +210,7 @@ class MikrotikSwosOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         if user_input is not None:
             self._groups = user_input
-            if user_input.get(CONF_ENABLE_STATS) or user_input.get(CONF_ENABLE_ERRORS):
+            if user_input.get(CONF_ENABLE_STATS) or user_input.get(CONF_ENABLE_ERRORS) or user_input.get(CONF_ENABLE_PORT_CONTROL):
                 return await self.async_step_ports()
             return self.async_create_entry(title="", data=dict(user_input))
 
