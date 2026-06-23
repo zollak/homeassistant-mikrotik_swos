@@ -23,7 +23,7 @@ Provides system monitoring, SFP+ diagnostics, per-port traffic statistics, per-p
 
 - **System monitoring**:
   - Board temperature (°C)
-  - Uptime (seconds)
+  - Uptime (shown as a relative timestamp, e.g. "3 days ago")
   - Device info: model, serial number, firmware version, MAC, IP
 - **SFP+ diagnostics** (per slot):
   - Temperature (°C)
@@ -45,6 +45,8 @@ Provides system monitoring, SFP+ diagnostics, per-port traffic statistics, per-p
   - Total power consumption (W)
   - Per-port: power (W), current (mA), voltage (V), state
   - PoE states: powered_on, disabled, waiting_for_load, overload, short_circuit, etc.
+- **Port control** (optional): a switch entity per port to **enable/disable** the port
+  (writes the SwOS link configuration). Off by default; enable the "Port control" group.
 - Config flow UI with connection validation
 - Re-authentication flow (password change without removing the integration)
 - HTTP Digest authentication (SwOS native)
@@ -90,6 +92,7 @@ Board temperature and uptime are always included. Toggle the optional groups:
 | PoE monitoring | on | PSU + per-port PoE sensors (only created if the switch has PoE) |
 | Per-port traffic statistics | off | RX/TX bytes and packets per selected port |
 | Per-port error counters | off | FCS / alignment / runts / oversized / collision counters per selected port |
+| Port control | off | A **switch** per port to enable/disable it (writes the SwOS link config) |
 
 **Step 3 — Ports** (shown only if traffic statistics or error counters are enabled)
 
@@ -102,6 +105,12 @@ removes those entities on reload (they are not left behind as "unavailable").
 
 > **Note:** stats create 4 sensors per selected port, errors 5 per selected port. Enable
 > only what you need. PoE sensors are auto-detected and only created on PoE switches.
+
+> ⚠️ **Port control:** the per-port switches let you disable a port, which **cuts all
+> traffic on it**. Disabling an uplink/management port can lock you out of the switch
+> (and of Home Assistant if HA reaches the switch through it). Consider limiting the port
+> selection to non-critical ports so no switch is created for uplink/management ports.
+> Switch state is read back on each poll (≤ scan interval, default 30 s).
 
 ## Sensors
 
