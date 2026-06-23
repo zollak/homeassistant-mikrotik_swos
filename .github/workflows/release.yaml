@@ -22,8 +22,8 @@ jobs:
 
       - name: Create zip
         run: |
-          cd custom_components
-          zip -r ../mikrotik_swos.zip mikrotik_swos/
+          cd custom_components/mikrotik_swos
+          zip -r ../../mikrotik_swos.zip ./ -x '*__pycache__*' -x '*.pyc'
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
