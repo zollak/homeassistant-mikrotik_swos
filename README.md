@@ -15,6 +15,7 @@ Provides system monitoring, SFP+ diagnostics, per-port traffic statistics, per-p
 | Model | Tested | PoE |
 |---|---|---|
 | CSS326-24G-2S+ | Yes | No |
+| CSS106-1G-4P-1S | Yes (community, #3) | Yes |
 | CRS328-24P-4S+RM | No | Yes |
 | CRS112-8P-4S-IN | No | Yes |
 | Other CSS/CRS with SwOS 2.x | No | Varies |

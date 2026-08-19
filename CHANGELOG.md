@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.3] - 2026-08-19
+
+### Fixed
+- Setup crash `object of type 'int' has no len()` on single-SFP / single-unit switches
+  (e.g. **CSS106-1G-4P-1S**): SwOS returns per-SFP fields (and PoE) as bare scalars instead
+  of lists on these models. SFP parsing now normalizes scalars to single-element lists, and
+  `_safe_get` never calls `len()` on a non-list. (issue #3)
+
+### Added
+- PoE status/current/power is now read from `/link.b` when a switch has no `/poe.b` endpoint
+  (single-unit PoE models like the CSS106). (issue #3)
+- Port statistics now try `/!stats.b` (with `/stats.b` fallback), matching newer SwOS. (issue #3)
+
+### Known limitations
+- On single-SFP models the SFP slot is still reported at the fixed port index 25 (cosmetic;
+  data is correct).
+
 ## [0.2.2] - 2026-08-02
 
 ### Changed

@@ -329,8 +329,12 @@ def _combine_u64(low: int, high: int) -> int:
     return (high << 32) | (low & 0xFFFFFFFF)
 
 
-def _safe_get(arr: list, idx: int, default: int = 0) -> int:
-    return arr[idx] if idx < len(arr) else default
+def _safe_get(arr, idx: int, default: int = 0) -> int:
+    # Defensive: SwOS returns scalars (not lists) for per-port fields on
+    # single-unit models (e.g. CSS106); never call len() on a bare int.
+    if not isinstance(arr, list) or idx >= len(arr):
+        return default
+    return arr[idx]
 
 
 def _signed16(val: int) -> int:
@@ -415,13 +419,17 @@ class SwosApi:
         data.sfp_slots = self._parse_sfp(sfp_raw)
 
         if self.enable_stats or self.enable_errors:
-            stats_data = await self._fetch_endpoint("/stats.b")
+            stats_data = await self._fetch_stats()
             if self.enable_stats:
                 data.port_stats = self._parse_port_stats(stats_data, port_names, link_mask)
             if self.enable_errors:
                 data.port_errors = self._parse_port_errors(stats_data)
 
         poe_raw = await self._fetch_poe()
+        if not poe_raw and any(k in link_data for k in ("poes", "curr", "pwr")):
+            # single-unit PoE switches (e.g. CSS106) have no /poe.b endpoint;
+            # PoE status/current/power live in /link.b instead.
+            poe_raw = link_data
         if poe_raw:
             data.poe_available = True
             data.poe_ports = self._parse_poe(poe_raw, port_names)
@@ -465,6 +473,17 @@ class SwosApi:
                 _LOGGER.debug("SFP endpoint not available")
                 return {}
             raise
+
+    async def _fetch_stats(self) -> dict:
+        # newer SwOS exposes counters at /!stats.b; some models at /stats.b.
+        for path in ("/!stats.b", "/stats.b"):
+            try:
+                data = await self._fetch_endpoint(path)
+                if data:
+                    return data
+            except Exception:
+                _LOGGER.debug("stats endpoint %s not available", path, exc_info=True)
+        return {}
 
     async def _fetch_poe(self) -> dict:
         try:
@@ -520,19 +539,25 @@ class SwosApi:
     def _parse_sfp(self, sfp: dict) -> list[SfpSlot]:
         if not sfp:
             return []
-        num = 2
-        vnd = sfp.get("vnd", [""] * num)
-        pnr = sfp.get("pnr", [""] * num)
-        ser = sfp.get("ser", [""] * num)
-        rev = sfp.get("rev", [""] * num)
-        dat = sfp.get("dat", [""] * num)
-        typ = sfp.get("typ", [""] * num)
-        wln = sfp.get("wln", [0] * num)
-        tmp = sfp.get("tmp", [0] * num)
-        vcc = sfp.get("vcc", [0] * num)
-        tbs = sfp.get("tbs", [0] * num)
-        tpw = sfp.get("tpw", [0] * num)
-        rpw = sfp.get("rpw", [0] * num)
+        # SwOS returns per-SFP fields as lists on multi-SFP switches, but as bare
+        # scalars on single-SFP models (e.g. CSS106) -- normalize to lists so the
+        # per-slot indexing works on both (str is NOT split into chars).
+        def _as_list(v):
+            return v if isinstance(v, list) else [v]
+
+        vnd = _as_list(sfp.get("vnd", []))
+        pnr = _as_list(sfp.get("pnr", []))
+        ser = _as_list(sfp.get("ser", []))
+        rev = _as_list(sfp.get("rev", []))
+        dat = _as_list(sfp.get("dat", []))
+        typ = _as_list(sfp.get("typ", []))
+        wln = _as_list(sfp.get("wln", []))
+        tmp = _as_list(sfp.get("tmp", []))
+        vcc = _as_list(sfp.get("vcc", []))
+        tbs = _as_list(sfp.get("tbs", []))
+        tpw = _as_list(sfp.get("tpw", []))
+        rpw = _as_list(sfp.get("rpw", []))
+        num = max(len(vnd), len(tmp), 1)
 
         slots = []
         for i in range(num):
