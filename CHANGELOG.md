@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.4] - 2026-08-19
+
+### Added
+- **System voltage** sensor read from `/sys.b` `volt` (÷10 → volts) — shown by SwOS as
+  "Health → Voltage". Single-unit switches (e.g. CSS106) report it here rather than via the
+  per-PSU fields. (issue #3)
+
+### Fixed
+- Ports-selection step wording no longer says "create traffic/error sensors for" — that step
+  is shared by the traffic/error/**port-control** groups, so the prompt is now generic. (issue #3)
+
 ## [0.2.3] - 2026-08-19
 
 ### Fixed

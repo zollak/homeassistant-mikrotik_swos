@@ -50,8 +50,21 @@ def test_safe_get_is_scalar_safe():
     assert m._safe_get(0xFFFFFF80, 0, default=-1) == -1  # int, not list -> default, no crash
 
 
+SYS_CSS106 = ("{upt:0x0005d0d4,volt:0x00e9,temp:0x0000001f,"
+              "brd:'4353533130362d31472d34502d3153',id:'5242323630475350'}")
+
+
+def test_system_voltage_from_sys_b():
+    sysd = m._parse_swb("sys.b:" + SYS_CSS106).get("sys.b", {})
+    si = _client()._parse_system_info(sysd)
+    assert si.input_voltage_v == 23.3   # volt:0x00e9 = 233 -> /10 = 23.3V (matches SwOS Health UI)
+    assert si.board_temp_c == 31
+
+
 if __name__ == "__main__":
     test_sfp_scalar_fields_do_not_crash()
     test_poe_from_link_when_no_poe_endpoint()
     test_safe_get_is_scalar_safe()
+    test_system_voltage_from_sys_b()
     print("all CSS106 regression tests passed")
+

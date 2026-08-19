@@ -25,7 +25,7 @@
             },
             "ports": {
                 "title": "Ports",
-                "description": "Select which ports to create traffic/error sensors for. All ports are selected by default; deselect the ones you do not need.",
+                "description": "Select which ports to include (for the sensor groups / port control you chose above). All ports are selected by default; deselect the ones you do not need.",
                 "data": {
                     "ports": "Ports"
                 }
@@ -64,7 +64,7 @@
             },
             "ports": {
                 "title": "Ports",
-                "description": "Select which ports to create traffic/error sensors for.",
+                "description": "Select which ports to include (for the sensor groups / port control you chose above).",
                 "data": {
                     "ports": "Ports"
                 }
@@ -74,6 +74,7 @@
     "entity": {
         "sensor": {
             "board_temperature": {"name": "Board Temperature"},
+            "voltage": {"name": "Voltage"},
             "uptime": {"name": "Uptime"},
             "psu1_voltage": {"name": "PSU1 Voltage"},
             "psu1_current": {"name": "PSU1 Current"},

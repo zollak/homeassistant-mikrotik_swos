@@ -69,6 +69,14 @@ SYSTEM_SENSORS: tuple[SwosSystemSensorDescription, ...] = (
         value_fn=lambda d: d.system.board_temp_c,
     ),
     SwosSystemSensorDescription(
+        key="voltage",
+        translation_key="voltage",
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: d.system.input_voltage_v or None,
+    ),
+    SwosSystemSensorDescription(
         key="uptime",
         translation_key="uptime",
         device_class=SensorDeviceClass.TIMESTAMP,

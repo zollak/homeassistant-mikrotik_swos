@@ -193,6 +193,7 @@ class SystemInfo:
     ip: str = ""
     uptime_seconds: int = 0
     board_temp_c: int | None = None
+    input_voltage_v: float = 0.0
     psu1_voltage_v: float = 0.0
     psu1_current_ma: int = 0
     psu1_power_w: float = 0.0
@@ -509,6 +510,8 @@ class SwosApi:
         uptime_sec = upt // 100 if isinstance(upt, int) else 0
         temp = sys_data.get("temp", None)
         board_temp = _signed16(temp) if isinstance(temp, int) and temp > 0 else None
+        volt = sys_data.get("volt", 0)
+        input_voltage = round(volt / 10, 1) if isinstance(volt, int) and volt else 0.0
 
         p1v = sys_data.get("p1v", 0)
         p1c = sys_data.get("p1c", 0)
@@ -527,6 +530,7 @@ class SwosApi:
             ip=ip,
             uptime_seconds=uptime_sec,
             board_temp_c=board_temp,
+            input_voltage_v=input_voltage,
             psu1_voltage_v=round(p1v / 100, 2) if isinstance(p1v, int) and p1v else 0.0,
             psu1_current_ma=p1c if isinstance(p1c, int) else 0,
             psu1_power_w=round(p1p / 10, 1) if isinstance(p1p, int) and p1p else 0.0,

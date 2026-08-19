@@ -135,6 +135,7 @@ removes those entities on reload (they are not left behind as "unavailable").
 | Sensor | Unit | Device class |
 |---|---|---|
 | Board Temperature | °C | `temperature` |
+| Voltage | V | `voltage` |
 | Uptime | s | `duration` |
 
 The device info panel shows model, serial number, and firmware version.
