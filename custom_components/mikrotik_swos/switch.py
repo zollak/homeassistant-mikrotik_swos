@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
@@ -14,6 +15,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import CONF_ENABLE_PORT_CONTROL, CONF_PORTS, DOMAIN, NUM_PORTS
 from .coordinator import SwosCoordinator
 from .swos_api import SwitchData
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -31,6 +34,10 @@ async def async_setup_entry(
     selected_ports = {int(p) for p in _opt(CONF_PORTS, list(range(1, num_ports + 1)))}
 
     entities: list[SwitchEntity] = []
+    if enable_port_control and coordinator.data and coordinator.data.lite:
+        # The SwOS Lite write format is not verified; never write a guessed one.
+        _LOGGER.warning("Port control is not supported on SwOS Lite yet; no port switches created")
+        enable_port_control = False
     if enable_port_control:
         sys = coordinator.data.system if coordinator.data else None
         device_info = {

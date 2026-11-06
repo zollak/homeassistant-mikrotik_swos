@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Fixed
+- **SwOS Lite switches showed no data** (e.g. **FTC11XG**, SwOS Lite 2.18): SwOS Lite answers
+  every endpoint with numbered keys (`i01`, `i02`, ...) instead of the named keys of SwOS. These
+  are now translated for system info, link state, SFP diagnostics and traffic counters. Each
+  key was matched against the switch's web UI. Not yet supported on SwOS Lite: the per-port
+  error counters and the board temperature (not mapped yet) and port control (the write format
+  is not verified, so no port switches are created). (issue #5)
 - **Switches not laid out like a CSS326** (e.g. **CRS309-1G-8S+**): the integration assumed 26
   ports with two SFP+ cages at ports 25-26, so an 8-cage switch got sensors for only two SFP
   slots. The port count, the SFP count and the first SFP port now come from the switch

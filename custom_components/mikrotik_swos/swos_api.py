@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -141,6 +142,96 @@ def _parse_swb(text: str) -> dict:
     return result
 
 
+# ── SwOS Lite numbered keys ──────────────────────────────────────────────────
+#
+# SwOS Lite (e.g. FTC11XG, SwOS Lite 2.18) answers every endpoint with numbered
+# keys (i01, i02, ...) instead of the named keys of SwOS (upt, brd, nm, ...).
+# The maps below translate them to the named keys, so one parser serves both.
+# Each entry was matched against the switch's own web UI (issue #5).
+
+_NUMBERED_KEY = re.compile(r"^i[0-9a-f]{2}$")
+
+_LITE_SYS = {
+    "i02": "ip",
+    "i03": "mac",
+    "i04": "sid",
+    "i05": "brd",
+    "i06": "ver",
+    "i07": "id",
+}
+_LITE_LINK = {
+    "i01": "en",
+    "i06": "lnk",
+    "i08": "spd",
+    "i0a": "nm",
+}
+_LITE_SFP = {
+    "i01": "vnd",
+    "i02": "pnr",
+    "i03": "rev",
+    "i04": "ser",
+    "i05": "dat",
+    "i06": "typ",
+    "i07": "wln",
+    "i08": "tmp",
+    "i09": "vcc",
+    "i0a": "tbs",
+    "i0b": "tpw",
+    "i0c": "rpw",
+}
+# !stats.b: per-port lists. Byte counters are split into a low and a high word.
+_LITE_STATS = {
+    "i01": "rb",
+    "i02": "rbh",
+    "i07": "rbp",
+    "i08": "rmp",
+    "i0f": "tb",
+    "i10": "tbh",
+    "i13": "tmp",
+    "i14": "tbp",
+}
+_LITE_RX_PACKETS = ("i05", "i07", "i08")  # unicast + broadcast + multicast
+_LITE_TX_PACKETS = ("i11", "i13", "i14")
+
+
+def is_numbered(data: dict) -> bool:
+    """True if an endpoint answered in the SwOS Lite numbered-key format."""
+    return bool(data) and all(_NUMBERED_KEY.match(k) for k in data)
+
+
+def _sum_lists(data: dict, keys: tuple[str, ...]) -> list[int]:
+    lists = [data[k] for k in keys if isinstance(data.get(k), list)]
+    if not lists:
+        return []
+    return [sum(vals) for vals in zip(*lists)]
+
+
+def normalize_lite(section: str, data: dict) -> dict:
+    """Translate a SwOS Lite numbered-key answer to the named keys; others pass through."""
+    if not is_numbered(data):
+        return data
+    if section == "sys.b":
+        out = {named: data[num] for num, named in _LITE_SYS.items() if num in data}
+        if isinstance(data.get("i01"), int):
+            out["upt"] = data["i01"] * 100  # SwOS Lite counts seconds, SwOS hundredths
+        return out
+    if section == "link.b":
+        return {named: data[num] for num, named in _LITE_LINK.items() if num in data}
+    if section == "sfp.b":
+        return {named: data[num] for num, named in _LITE_SFP.items() if num in data}
+    if section == "stats.b":
+        out = {named: data[num] for num, named in _LITE_STATS.items() if num in data}
+        out["rtp"] = _sum_lists(data, _LITE_RX_PACKETS)
+        out["ttp"] = _sum_lists(data, _LITE_TX_PACKETS)
+        return out
+    return {}
+
+
+def _sfp_type(raw: str) -> str:
+    """SwOS Lite writes the wavelength as a hex placeholder: '{051e}nm' -> '1310nm'."""
+    return re.sub(r"\{([0-9a-fA-F]+)\}", lambda m: str(int(m.group(1), 16)), raw)
+
+
 # ── PoE state mapping ────────────────────────────────────────────────────────
 
 POE_STATES = {
@@ -250,6 +341,7 @@ class SwitchData:
     port_errors: list[PortErrors] = field(default_factory=list)
     poe_available: bool = False
     poe_ports: list[PoePort] = field(default_factory=list)
+    lite: bool = False  # SwOS Lite numbered-key firmware (read-only support)
     port_names: list[str] = field(default_factory=list)
     port_enabled: list[bool] = field(default_factory=list)
     num_ports: int = 26
@@ -415,6 +507,7 @@ class SwosApi:
         self._verify_ssl = verify_ssl
         self.enable_stats = enable_stats
         self.enable_errors = enable_errors
+        self._lite = False
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(auth=self._auth, verify=self._verify_ssl, timeout=15.0)
@@ -443,6 +536,7 @@ class SwosApi:
 
         sys_data = await self._fetch_endpoint("/sys.b")
         data.system = self._parse_system_info(sys_data)
+        data.lite = self._lite
 
         link_data = await self._fetch_endpoint("/link.b")
         sfp_raw = await self._fetch_sfp()
@@ -465,7 +559,8 @@ class SwosApi:
             stats_data = await self._fetch_stats()
             if self.enable_stats:
                 data.port_stats = self._parse_port_stats(stats_data, port_names, link_mask, layout.num_ports)
-            if self.enable_errors:
+            # The SwOS Lite error counters are not mapped yet; no values beat wrong ones.
+            if self.enable_errors and not data.lite:
                 data.port_errors = self._parse_port_errors(stats_data, layout.num_ports)
 
         poe_raw = await self._fetch_poe()
@@ -493,7 +588,11 @@ class SwosApi:
             resp.raise_for_status()
             raw = resp.text.strip()
             section = path.lstrip("/!").rstrip("/")
-            return _parse_swb(f"{section}:{raw}").get(section, {})
+            data = _parse_swb(f"{section}:{raw}").get(section, {})
+            if is_numbered(data):
+                self._lite = True
+                return normalize_lite(section, data)
+            return data
 
     async def async_set_port_enabled(self, port: int, enabled: bool) -> None:
         """Enable or disable a port by POSTing the modified link object to /link.b.
@@ -504,6 +603,9 @@ class SwosApi:
         other link settings are preserved.
         """
         link = await self._fetch_endpoint("/link.b")
+        if self._lite:
+            # Writing needs the SwOS Lite key order, which has not been verified.
+            raise SwosApiError("Port control is not supported on SwOS Lite yet")
         bit = 1 << (port - 1)
         en = link.get("en", 0)
         link["en"] = (en | bit) if enabled else (en & ~bit)
@@ -639,7 +741,7 @@ class SwosApi:
                 serial=str(ser[i]).strip() if i < len(ser) else "",
                 revision=str(rev[i]).strip() if i < len(rev) else "",
                 date_code=str(dat[i]).strip() if i < len(dat) else "",
-                sfp_type=str(typ[i]).strip() if i < len(typ) else "",
+                sfp_type=_sfp_type(str(typ[i]).strip()) if i < len(typ) else "",
                 wavelength_nm=_safe_get(wln, i),
                 temperature_c=_sfp_temp(temp_raw) if has_ddm else None,
                 voltage_v=_sfp_voltage_v(_safe_get(vcc, i)) if has_ddm else None,
