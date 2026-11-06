@@ -252,6 +252,16 @@ class SwitchData:
     poe_ports: list[PoePort] = field(default_factory=list)
     port_names: list[str] = field(default_factory=list)
     port_enabled: list[bool] = field(default_factory=list)
+    num_ports: int = 26
+    num_sfp: int = 2
+    sfp_offset: int = 24
+
+
+@dataclass
+class PortLayout:
+    num_ports: int
+    num_sfp: int
+    sfp_offset: int  # 0-based index of the first SFP port
 
 
 # ── Conversion helpers ────────────────────────────────────────────────────────
@@ -338,6 +348,29 @@ def _safe_get(arr, idx: int, default: int = 0) -> int:
     return arr[idx]
 
 
+def port_layout(link: dict, sfp: dict) -> PortLayout:
+    """Read the port and SFP count from the switch instead of assuming a CSS326.
+
+    SwOS reports them in /link.b: prt = number of ports, sfp = number of SFP
+    cages, sfpo = index of the first SFP port (CSS326: 26/2/24, CRS309: 9/8/0).
+    Older builds without these keys fall back to the length of the name list
+    and the SFP list, with the SFP cages at the end.
+    """
+    nm = link.get("nm", [])
+    names = nm if isinstance(nm, list) else [nm]
+    prt = link.get("prt")
+    num_ports = prt if isinstance(prt, int) and prt > 0 else (len(names) or 26)
+
+    nsfp = link.get("sfp")
+    if not isinstance(nsfp, int):
+        vnd = sfp.get("vnd") if sfp else None
+        nsfp = len(vnd) if isinstance(vnd, list) else (1 if vnd is not None else 0)
+
+    sfpo = link.get("sfpo")
+    offset = sfpo if isinstance(sfpo, int) else max(num_ports - nsfp, 0)
+    return PortLayout(num_ports=num_ports, num_sfp=nsfp, sfp_offset=offset)
+
+
 def _signed16(val: int) -> int:
     if val >= 0x8000:
         val -= 0x10000
@@ -368,7 +401,7 @@ class SwosApi:
         self,
         host: str,
         username: str,
-        password: str,
+        password: str = "",
         port: int = 80,
         verify_ssl: bool = False,
         enable_stats: bool = False,
@@ -376,7 +409,9 @@ class SwosApi:
     ) -> None:
         scheme = "https" if port == 443 else "http"
         self._base_url = f"{scheme}://{host}:{port}"
-        self._auth = httpx.DigestAuth(username, password)
+        # A switch with no password set still answers with a Digest challenge,
+        # so an empty password is sent the same way.
+        self._auth = httpx.DigestAuth(username, password or "")
         self._verify_ssl = verify_ssl
         self.enable_stats = enable_stats
         self.enable_errors = enable_errors
@@ -410,21 +445,28 @@ class SwosApi:
         data.system = self._parse_system_info(sys_data)
 
         link_data = await self._fetch_endpoint("/link.b")
-        port_names = link_data.get("nm", [""] * 26)
+        sfp_raw = await self._fetch_sfp()
+        layout = port_layout(link_data, sfp_raw)
+        data.num_ports = layout.num_ports
+        data.num_sfp = layout.num_sfp
+        data.sfp_offset = layout.sfp_offset
+
+        port_names = link_data.get("nm", [""] * layout.num_ports)
+        if not isinstance(port_names, list):
+            port_names = [port_names]
         link_mask = link_data.get("lnk", 0)
         en_mask = link_data.get("en", 0)
         data.port_names = [str(n) for n in port_names]
-        data.port_enabled = [bool(en_mask & (1 << i)) for i in range(26)]
+        data.port_enabled = [bool(en_mask & (1 << i)) for i in range(layout.num_ports)]
 
-        sfp_raw = await self._fetch_sfp()
-        data.sfp_slots = self._parse_sfp(sfp_raw)
+        data.sfp_slots = self._parse_sfp(sfp_raw, layout.sfp_offset)
 
         if self.enable_stats or self.enable_errors:
             stats_data = await self._fetch_stats()
             if self.enable_stats:
-                data.port_stats = self._parse_port_stats(stats_data, port_names, link_mask)
+                data.port_stats = self._parse_port_stats(stats_data, port_names, link_mask, layout.num_ports)
             if self.enable_errors:
-                data.port_errors = self._parse_port_errors(stats_data)
+                data.port_errors = self._parse_port_errors(stats_data, layout.num_ports)
 
         poe_raw = await self._fetch_poe()
         if not poe_raw and any(k in link_data for k in ("poes", "curr", "pwr")):
@@ -436,6 +478,14 @@ class SwosApi:
             data.poe_ports = self._parse_poe(poe_raw, port_names)
 
         return data
+
+    async def fetch_port_layout(self) -> tuple[PortLayout, list[str]]:
+        """Port layout and port names, for the config flow's port list."""
+        link = await self._fetch_endpoint("/link.b")
+        layout = port_layout(link, await self._fetch_sfp())
+        nm = link.get("nm", [])
+        names = [str(n) for n in (nm if isinstance(nm, list) else [nm])]
+        return layout, names
 
     async def _fetch_endpoint(self, path: str) -> dict:
         async with self._client() as client:
@@ -540,7 +590,7 @@ class SwosApi:
             power_consumption_w=round(pcon / 10, 1) if isinstance(pcon, int) and pcon else 0.0,
         )
 
-    def _parse_sfp(self, sfp: dict) -> list[SfpSlot]:
+    def _parse_sfp(self, sfp: dict, sfp_offset: int = 24) -> list[SfpSlot]:
         if not sfp:
             return []
         # SwOS returns per-SFP fields as lists on multi-SFP switches, but as bare
@@ -567,7 +617,7 @@ class SwosApi:
         for i in range(num):
             vendor = str(vnd[i]).strip() if i < len(vnd) and vnd[i] else ""
             present = bool(vendor)
-            port_num = 25 + i
+            port_num = sfp_offset + i + 1
 
             if not present:
                 slots.append(SfpSlot(port=port_num, present=False))
@@ -601,7 +651,9 @@ class SwosApi:
             ))
         return slots
 
-    def _parse_port_stats(self, stats: dict, port_names: list, link_mask: int) -> list[PortStats]:
+    def _parse_port_stats(
+        self, stats: dict, port_names: list, link_mask: int, num_ports: int = 26
+    ) -> list[PortStats]:
         rb = stats.get("rb", [])
         rbh = stats.get("rbh", [])
         tb = stats.get("tb", [])
@@ -616,7 +668,7 @@ class SwosApi:
         tpp = stats.get("tpp", [])
 
         result = []
-        for i in range(26):
+        for i in range(num_ports):
             name = str(port_names[i]).strip() if i < len(port_names) and port_names[i] else f"Port {i+1}"
             result.append(PortStats(
                 port=i + 1,
@@ -635,7 +687,7 @@ class SwosApi:
             ))
         return result
 
-    def _parse_port_errors(self, stats: dict) -> list[PortErrors]:
+    def _parse_port_errors(self, stats: dict, num_ports: int = 26) -> list[PortErrors]:
         rfcs = stats.get("rfcs", [])
         rae = stats.get("rae", [])
         rr = stats.get("rr", [])
@@ -646,7 +698,7 @@ class SwosApi:
         tlc = stats.get("tlc", [])
 
         result = []
-        for i in range(26):
+        for i in range(num_ports):
             result.append(PortErrors(
                 port=i + 1,
                 rx_fcs=_safe_get(rfcs, i),

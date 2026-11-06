@@ -38,14 +38,28 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
         vol.Required(CONF_USERNAME, default="admin"): str,
-        vol.Required(CONF_PASSWORD): str,
+        # SwOS ships with an empty password, and some users keep it that way.
+        vol.Optional(CONF_PASSWORD, default=""): str,
         vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
         vol.Optional(CONF_VERIFY_SSL, default=False): bool,
     }
 )
 
-_ALL_PORTS = [str(i) for i in range(1, NUM_PORTS + 1)]
-_PORT_OPTIONS = [SelectOptionDict(value=str(i), label=f"Port {i}") for i in range(1, NUM_PORTS + 1)]
+def _port_options(num_ports: int, names: list[str]) -> list[SelectOptionDict]:
+    options = []
+    for i in range(1, num_ports + 1):
+        name = names[i - 1].strip() if i - 1 < len(names) and names[i - 1] else ""
+        label = f"Port {i} ({name})" if name and name != f"Port{i}" else f"Port {i}"
+        options.append(SelectOptionDict(value=str(i), label=label))
+    return options
+
+
+def _sorted_ports(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Store the selection in port order, whatever order it was picked in."""
+    ports = user_input.get(CONF_PORTS)
+    if ports is None:
+        return user_input
+    return {**user_input, CONF_PORTS: sorted({str(p) for p in ports}, key=int)}
 
 
 def _groups_schema(defaults: Mapping[str, Any]) -> vol.Schema:
@@ -60,15 +74,19 @@ def _groups_schema(defaults: Mapping[str, Any]) -> vol.Schema:
     )
 
 
-def _ports_schema(defaults: Mapping[str, Any]) -> vol.Schema:
+def _ports_schema(
+    defaults: Mapping[str, Any], num_ports: int = NUM_PORTS, names: list[str] | None = None
+) -> vol.Schema:
+    all_ports = [str(i) for i in range(1, num_ports + 1)]
+    default = [str(p) for p in defaults.get(CONF_PORTS, all_ports) if int(p) <= num_ports]
     return vol.Schema(
         {
             vol.Optional(
                 CONF_PORTS,
-                default=[str(p) for p in defaults.get(CONF_PORTS, _ALL_PORTS)],
+                default=sorted(default, key=int),
             ): SelectSelector(
                 SelectSelectorConfig(
-                    options=_PORT_OPTIONS,
+                    options=_port_options(num_ports, names or []),
                     multiple=True,
                     mode=SelectSelectorMode.DROPDOWN,
                 )
@@ -86,6 +104,8 @@ class MikrotikSwosConfigFlow(ConfigFlow, domain=DOMAIN):
         self._conn: dict[str, Any] = {}
         self._title: str = ""
         self._groups: dict[str, Any] = {}
+        self._num_ports: int = NUM_PORTS
+        self._port_names: list[str] = []
 
     @staticmethod
     @callback
@@ -101,7 +121,7 @@ class MikrotikSwosConfigFlow(ConfigFlow, domain=DOMAIN):
             api = SwosApi(
                 host=user_input[CONF_HOST],
                 username=user_input[CONF_USERNAME],
-                password=user_input[CONF_PASSWORD],
+                password=user_input.get(CONF_PASSWORD, ""),
                 port=user_input[CONF_PORT],
                 verify_ssl=user_input.get(CONF_VERIFY_SSL, False),
             )
@@ -117,8 +137,13 @@ class MikrotikSwosConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(f"swos_{user_input[CONF_HOST]}")
                 self._abort_if_unique_id_configured()
-                self._conn = user_input
+                self._conn = {**user_input, CONF_PASSWORD: user_input.get(CONF_PASSWORD, "")}
                 self._title = info.hostname or user_input[CONF_HOST]
+                try:
+                    layout, self._port_names = await api.fetch_port_layout()
+                    self._num_ports = layout.num_ports
+                except Exception:
+                    _LOGGER.debug("Port layout not readable, assuming %s ports", NUM_PORTS, exc_info=True)
                 return await self.async_step_groups()
 
         return self.async_show_form(
@@ -142,8 +167,11 @@ class MikrotikSwosConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
-            return self._create_entry(user_input)
-        return self.async_show_form(step_id="ports", data_schema=_ports_schema({}))
+            return self._create_entry(_sorted_ports(user_input))
+        return self.async_show_form(
+            step_id="ports",
+            data_schema=_ports_schema({}, self._num_ports, self._port_names),
+        )
 
     def _create_entry(self, ports_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         data = {**self._conn, **self._groups}
@@ -168,7 +196,7 @@ class MikrotikSwosConfigFlow(ConfigFlow, domain=DOMAIN):
             api = SwosApi(
                 host=reauth_entry.data[CONF_HOST],
                 username=user_input[CONF_USERNAME],
-                password=user_input[CONF_PASSWORD],
+                password=user_input.get(CONF_PASSWORD, ""),
                 port=reauth_entry.data.get(CONF_PORT, DEFAULT_PORT),
                 verify_ssl=reauth_entry.data.get(CONF_VERIFY_SSL, False),
             )
@@ -184,7 +212,7 @@ class MikrotikSwosConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 return self.async_update_reload_and_abort(
                     reauth_entry,
-                    data={**reauth_entry.data, **user_input},
+                    data={**reauth_entry.data, **user_input, CONF_PASSWORD: user_input.get(CONF_PASSWORD, "")},
                 )
 
         return self.async_show_form(
@@ -192,7 +220,7 @@ class MikrotikSwosConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_USERNAME, default=reauth_entry.data.get(CONF_USERNAME, "admin")): str,
-                    vol.Required(CONF_PASSWORD): str,
+                    vol.Optional(CONF_PASSWORD, default=""): str,
                 }
             ),
             errors=errors,
@@ -222,7 +250,11 @@ class MikrotikSwosOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
-            return self.async_create_entry(title="", data={**self._groups, **user_input})
+            return self.async_create_entry(title="", data={**self._groups, **_sorted_ports(user_input)})
 
         cur = {**self.config_entry.data, **self.config_entry.options}
-        return self.async_show_form(step_id="ports", data_schema=_ports_schema(cur))
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+        data = coordinator.data if coordinator else None
+        num_ports = data.num_ports if data else NUM_PORTS
+        names = data.port_names if data else []
+        return self.async_show_form(step_id="ports", data_schema=_ports_schema(cur, num_ports, names))

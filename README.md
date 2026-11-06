@@ -94,7 +94,7 @@ The setup is a short multi-step flow:
 |---|---|---|
 | Host | — | Switch hostname or IP address (e.g. `10.10.10.4` or `sw1`) |
 | Username | `admin` | SwOS admin username |
-| Password | — | Admin password |
+| Password | empty | Admin password (leave empty if the switch has none) |
 | Port | `80` | HTTP port |
 | Verify SSL | `false` | SSL certificate verification (only for HTTPS) |
 

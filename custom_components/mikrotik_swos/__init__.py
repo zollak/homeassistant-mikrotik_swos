@@ -17,7 +17,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     api = SwosApi(
         host=entry.data[CONF_HOST],
         username=entry.data[CONF_USERNAME],
-        password=entry.data[CONF_PASSWORD],
+        password=entry.data.get(CONF_PASSWORD, ""),
         port=entry.data.get(CONF_PORT, DEFAULT_PORT),
         verify_ssl=entry.data.get(CONF_VERIFY_SSL, False),
         enable_stats=entry.options.get(CONF_ENABLE_STATS, entry.data.get(CONF_ENABLE_STATS, False)),
