@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.0] - 2026-11-06
 
 ### Fixed
 - **SwOS Lite switches showed no data** (e.g. **FTC11XG**, SwOS Lite 2.18): SwOS Lite answers
