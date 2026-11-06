@@ -27,7 +27,8 @@ async def async_setup_entry(
         return entry.options.get(key, entry.data.get(key, default))
 
     enable_port_control = _opt(CONF_ENABLE_PORT_CONTROL, False)
-    selected_ports = {int(p) for p in _opt(CONF_PORTS, list(range(1, NUM_PORTS + 1)))}
+    num_ports = coordinator.data.num_ports if coordinator.data else NUM_PORTS
+    selected_ports = {int(p) for p in _opt(CONF_PORTS, list(range(1, num_ports + 1)))}
 
     entities: list[SwitchEntity] = []
     if enable_port_control:
@@ -40,7 +41,7 @@ async def async_setup_entry(
             "serial_number": sys.serial_number if sys else None,
             "sw_version": sys.firmware if sys else None,
         }
-        for port_idx in range(NUM_PORTS):
+        for port_idx in range(num_ports):
             if port_idx + 1 in selected_ports:
                 entities.append(SwosPortSwitch(coordinator, entry, port_idx, device_info))
 

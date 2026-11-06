@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Switches not laid out like a CSS326** (e.g. **CRS309-1G-8S+**): the integration assumed 26
+  ports with two SFP+ cages at ports 25-26, so an 8-cage switch got sensors for only two SFP
+  slots. The port count, the SFP count and the first SFP port now come from the switch
+  (`/link.b` `prt`, `sfp`, `sfpo`), with a fallback for builds that do not report them.
+  Existing entities keep their IDs. (issue #4)
+- **Empty password**: the password field is optional, so a switch with no password set can
+  be added (and re-authenticated). (issue #4)
+
+### Changed
+- The port selection lists the switch's own ports with their SwOS names, and the saved
+  selection is kept in port order. (issue #4)
+
 ## [0.2.4] - 2026-08-19
 
 ### Added

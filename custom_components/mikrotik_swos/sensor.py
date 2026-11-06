@@ -370,7 +370,9 @@ async def async_setup_entry(
     enable_stats = _opt(CONF_ENABLE_STATS, False)
     enable_errors = _opt(CONF_ENABLE_ERRORS, False)
     enable_poe = _opt(CONF_ENABLE_POE, True)
-    selected_ports = {int(p) for p in _opt(CONF_PORTS, list(range(1, NUM_PORTS + 1)))}
+    num_ports = coordinator.data.num_ports if coordinator.data else NUM_PORTS
+    num_sfp = coordinator.data.num_sfp if coordinator.data else NUM_SFP
+    selected_ports = {int(p) for p in _opt(CONF_PORTS, list(range(1, num_ports + 1)))}
 
     entities: list[SensorEntity] = []
 
@@ -378,20 +380,22 @@ async def async_setup_entry(
         entities.append(SwosSystemSensor(coordinator, entry, desc, device_info))
 
     if enable_sfp:
-        for slot_idx in range(NUM_SFP):
-            port_num = SFP_PORT_OFFSET + slot_idx + 1
+        for slot_idx in range(num_sfp):
+            # unique_id numbering from the CSS326 layout (SFP1 = 25), kept for every
+            # model so existing entities keep their IDs; the names use the slot number.
+            uid_port = SFP_PORT_OFFSET + slot_idx + 1
             for desc in SFP_SENSORS:
-                entities.append(SwosSfpSensor(coordinator, entry, desc, slot_idx, port_num, device_info))
+                entities.append(SwosSfpSensor(coordinator, entry, desc, slot_idx, uid_port, device_info))
 
     if enable_stats:
-        for port_idx in range(NUM_PORTS):
+        for port_idx in range(num_ports):
             if port_idx + 1 not in selected_ports:
                 continue
             for desc in PORT_STATS_SENSORS:
                 entities.append(SwosPortStatsSensor(coordinator, entry, desc, port_idx, device_info))
 
     if enable_errors:
-        for port_idx in range(NUM_PORTS):
+        for port_idx in range(num_ports):
             if port_idx + 1 not in selected_ports:
                 continue
             for desc in PORT_ERROR_SENSORS:
