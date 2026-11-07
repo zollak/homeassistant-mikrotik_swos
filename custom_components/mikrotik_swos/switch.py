@@ -47,6 +47,7 @@ async def async_setup_entry(
             "model": sys.model if sys else "CSS326-24G-2S+",
             "serial_number": sys.serial_number if sys else None,
             "sw_version": sys.firmware if sys else None,
+            "configuration_url": f"http://{sys.ip}" if sys and sys.ip else None,
         }
         for port_idx in range(num_ports):
             if port_idx + 1 in selected_ports:
