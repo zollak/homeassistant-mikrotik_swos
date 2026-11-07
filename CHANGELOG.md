@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.1] - 2026-11-07
+
+### Added
+- **Identity, IP address and MAC address** sensors (diagnostic) on every model, and the IP as
+  the device's "Visit" link to the switch web UI. (issue #5)
+- The **SFP date** code in the SFP temperature sensor's attributes. (issue #5)
+
+### Fixed
+- **SwOS Lite**: the board temperature and voltage sensors are no longer created when the
+  switch does not report them (e.g. FTC11XG), instead of staying "unknown". (issue #5)
+
 ## [0.3.0] - 2026-11-06
 
 ### Fixed

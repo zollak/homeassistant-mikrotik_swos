@@ -1,12 +1,14 @@
 {
     "domain": "mikrotik_swos",
     "name": "MikroTik SwOS",
-    "codeowners": ["@zollak"],
+    "codeowners": [
+        "@zollak"
+    ],
     "config_flow": true,
     "dependencies": [],
     "documentation": "https://github.com/zollak/homeassistant-mikrotik_swos",
     "iot_class": "local_polling",
     "issue_tracker": "https://github.com/zollak/homeassistant-mikrotik_swos/issues",
     "requirements": [],
-    "version": "0.3.0"
+    "version": "0.3.1"
 }
