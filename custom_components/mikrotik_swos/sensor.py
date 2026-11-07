@@ -84,6 +84,33 @@ SYSTEM_SENSORS: tuple[SwosSystemSensorDescription, ...] = (
     ),
 )
 
+# Switch identity, read from sys.b. Diagnostic, so they sit with the device info
+# and not on dashboards; the MAC is NOT a device-registry connection, because
+# another integration (e.g. a router tracking the switch) may already own a
+# device with that MAC and HA would merge the two.
+INFO_SENSORS: tuple[SwosSystemSensorDescription, ...] = (
+    SwosSystemSensorDescription(
+        key="identity",
+        translation_key="identity",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: d.system.hostname or None,
+    ),
+    SwosSystemSensorDescription(
+        key="ip_address",
+        translation_key="ip_address",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: d.system.ip or None,
+    ),
+    SwosSystemSensorDescription(
+        key="mac_address",
+        translation_key="mac_address",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: d.system.mac or None,
+    ),
+)
+
+_LITE_UNREPORTED = {"board_temperature", "voltage"}
+
 PSU_SENSORS: tuple[SwosSystemSensorDescription, ...] = (
     SwosSystemSensorDescription(
         key="psu1_voltage",
@@ -376,7 +403,14 @@ async def async_setup_entry(
 
     entities: list[SensorEntity] = []
 
+    data = coordinator.data
     for desc in SYSTEM_SENSORS:
+        # SwOS Lite (e.g. FTC11XG) has no board temperature or input voltage on its
+        # Health page, so these would stay "unknown" forever (issue #5).
+        if data and data.lite and desc.key in _LITE_UNREPORTED and desc.value_fn(data) is None:
+            continue
+        entities.append(SwosSystemSensor(coordinator, entry, desc, device_info))
+    for desc in INFO_SENSORS:
         entities.append(SwosSystemSensor(coordinator, entry, desc, device_info))
 
     if enable_sfp:
@@ -430,6 +464,7 @@ def _build_device_info(coordinator: SwosCoordinator, entry: ConfigEntry) -> dict
         "model": sys.model if sys else "CSS326-24G-2S+",
         "serial_number": sys.serial_number if sys else None,
         "sw_version": sys.firmware if sys else None,
+        "configuration_url": f"http://{sys.ip}" if sys and sys.ip else None,
     }
 
 
@@ -502,6 +537,7 @@ class SwosSfpSensor(CoordinatorEntity[SwosCoordinator], SensorEntity):
             "part_number": slot.part_number,
             "serial": slot.serial,
             "revision": slot.revision,
+            "date": slot.date_code,
             "type": slot.sfp_type,
         }
 
