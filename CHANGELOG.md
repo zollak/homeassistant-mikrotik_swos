@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.2] - 2026-11-08
+
+### Fixed
+- **SwOS Lite**: the identity and the model were swapped (the device page showed the
+  identity as model and the model in the Identity sensor). Unique IDs are unchanged. (issue #5)
+
 ## [0.3.1] - 2026-11-07
 
 ### Added
