@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3] - 2026-11-08
+
+### Fixed
+- **Setup failed on switches without an SFP cage** (e.g. **CRS304-4XG**, SwOS 2.19) with
+  `SwOS parse: unexpected ('EOF', None)`: the switch answers `/sfp.b` with HTTP 200 and an empty
+  body. An empty answer now reads as no data. (issue #9)
+
 ## [0.3.2] - 2026-11-08
 
 ### Fixed
