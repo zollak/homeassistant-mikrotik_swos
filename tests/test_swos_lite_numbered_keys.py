@@ -76,6 +76,15 @@ def test_system_page():
     assert si.uptime_seconds == 164676  # web UI: 1 days 21:44:47 (taken a few seconds later)
 
 
+
+def test_identity_and_model_after_rename():
+    # The reporter renamed the switch to FTC11XG111: i05 changed, i07 stayed the model (issue #5).
+    renamed = SYS.replace("i05:'46544331315847'", "i05:'46544331315847313131'")
+    assert renamed != SYS
+    si = _client()._parse_system_info(_parse("sys.b", renamed))
+    assert si.hostname == "FTC11XG111"
+    assert si.model == "FTC11XG"
+
 def test_link_page_and_layout():
     link = _parse("link.b", LINK)
     assert link["nm"] == ["Port1", "Port2", "SFP+1"]

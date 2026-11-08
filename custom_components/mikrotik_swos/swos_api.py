@@ -155,9 +155,9 @@ _LITE_SYS = {
     "i02": "ip",
     "i03": "mac",
     "i04": "sid",
-    "i05": "brd",
+    "i05": "id",  # identity; equals the model until the owner renames it
     "i06": "ver",
-    "i07": "id",
+    "i07": "brd",
 }
 _LITE_LINK = {
     "i01": "en",
