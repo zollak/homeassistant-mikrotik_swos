@@ -587,6 +587,11 @@ class SwosApi:
             resp = await client.get(f"{self._base_url}{path}")
             resp.raise_for_status()
             raw = resp.text.strip()
+            if not raw:
+                # A model without the feature (e.g. no SFP cage on a CRS304-4XG)
+                # answers HTTP 200 with an empty body (issue #9).
+                _LOGGER.debug("%s returned an empty body", path)
+                return {}
             section = path.lstrip("/!").rstrip("/")
             data = _parse_swb(f"{section}:{raw}").get(section, {})
             if is_numbered(data):
